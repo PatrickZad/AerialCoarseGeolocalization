@@ -40,6 +40,7 @@ def retrain_classifier():
 
     feature_extractor = VGG16FeatureExtractor()
     net = feature_extractor.new_classifier(class_num)
+    net.train()
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
