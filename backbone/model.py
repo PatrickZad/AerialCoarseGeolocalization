@@ -33,7 +33,7 @@ class VGG16FeatureExtractor:
         model.to(device=device)
         model.eval()
         self.__split_net(model)
-        self.__max_poolinger = nn.MaxPool2d(kernel_size=2, stride=2)
+        # self.__max_poolinger = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def __split_net(self, model):
         all_layers = list(model.children())
@@ -61,13 +61,17 @@ class VGG16FeatureExtractor:
     def representations_of(self, input):
 
         r1 = self.__block1(input)
-        m1 = self.__max_poolinger(r1)
+        m1 = nn.functional.max_pool2d(input=r1, kernel_size=2, stride=2)
         r2 = self.__block2(m1)
-        m2 = self.__max_poolinger(r2)
+        # m2 = self.__max_poolinger(r2)
+        m2 = nn.functional.max_pool2d(input=r2, kernel_size=2, stride=2)
         r3 = self.__block3(m2)
-        m3 = self.__max_poolinger(r3)
+        # m3 = self.__max_poolinger(r3)
+        m3 = nn.functional.max_pool2d(input=r3, kernel_size=2, stride=2)
         r4 = self.__block4(m3)
-        m4 = self.__max_poolinger(r4)
+        # m4 = self.__max_poolinger(r4)
+        m4 = nn.functional.max_pool2d(input=r4, kernel_size=2, stride=2)
         r5 = self.__block5(m4)
-        m5 = self.__max_poolinger(r5)
+        # m5 = self.__max_poolinger(r5)
+        m5 = nn.functional.max_pool2d(input=r5, kernel_size=2, stride=2)
         return (r1, r2, r3, r4, r5), (m1, m2, m3, m4, m5)
