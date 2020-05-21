@@ -14,7 +14,7 @@ from data.dataset import getResiscData
 # config
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class_num = 45
-batch_size = 256
+batch_size = 64
 lr = 0.01
 momentum = 0.9
 l2_weight_decay = 5e-4
@@ -38,7 +38,7 @@ def retrain_classifier():
 
     train_dataset, val_dataset = getResiscData(device=device)
 
-    feature_extractor = VGG16FeatureExtractor()
+    feature_extractor = VGG16FeatureExtractor(device=device)
     net = feature_extractor.new_classifier(class_num)
     net.train()
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -65,8 +65,8 @@ def retrain_classifier():
         global ITER
         ITER += 1
         if ITER % log_period == 0:
-            logger.info("Epoch[{}] Batch[{}] Loss: {:.2f}".format(trainer.state.epoch, ITER, trainer.state.output))
-            print("Epoch[{}] Batch[{}] Loss: {:.2f}".format(trainer.state.epoch, ITER, trainer.state.output))
+            logger.info("Epoch[{}] Batch[{}] Loss: {}".format(trainer.state.epoch, ITER, trainer.state.output))
+            print("Epoch[{}] Batch[{}] Loss: {}".format(trainer.state.epoch, ITER, trainer.state.output))
         if len(train_loader) == ITER:
             ITER = 0
 
@@ -79,9 +79,9 @@ def retrain_classifier():
         val_loss = metrics['loss']
         scheduler.step(val_loss)
 
-        logger.info("Validation Results - Epoch: {} Val_loss: {},Loc_error: {}"
+        logger.info("Validation Results - Epoch: {} Val_loss: {}"
                     .format(trainer.state.epoch, metrics['loss']))
-        print("Validation Results - Epoch: {} Val_loss: {} Loc_error: {}"
+        print("Validation Results - Epoch: {} Val_loss: {}"
               .format(trainer.state.epoch, metrics['loss']))
 
     trainer.run(train_loader, max_epochs=max_epoch)

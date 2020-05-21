@@ -38,7 +38,7 @@ class ResiscDataset(Dataset):
             x_offset = np.random.randint(0, img_width - 224 + 1)
             y_offset = np.random.randint(0, img_width - 224 + 1)
         crop = scaled_img[y_offset:y_offset + 224, x_offset:x_offset + 224, :].copy()
-        io.imsave('./experiments/train_classifier/' + str(iter) + '.jpg', crop)
+        # io.imsave('./experiments/train_classifier/' + str(iter) + '.jpg', crop)
 
         data_array = np.transpose(crop, (2, 0, 1))
         # result = np.zeros(len(self.categories))
@@ -47,7 +47,7 @@ class ResiscDataset(Dataset):
 
         iter += 1
 
-        return torch.tensor(data_array, dtype=torch.double, device=self.device), \
+        return torch.tensor(data_array, dtype=torch.float, device=self.device), \
                torch.tensor(result, dtype=torch.long, device=self.device)
 
     def __len__(self):
