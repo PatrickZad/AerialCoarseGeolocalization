@@ -24,12 +24,12 @@ save_period = 10
 log_period = 10
 chang_lr_thred = 1e-3
 global ITER
-ITER=0
+ITER = 0
 global last_val_loss
 last_val_loss = 0
 
 
-def retrain_classifier():
+def retrain_classifier(local_file=None):
     expr_out = os.path.join(proj_path, 'experiments', 'train_classifier')
     logging.basicConfig(filename=os.path.join(expr_out, 'train_log'),
                         level=logging.INFO,
@@ -50,6 +50,14 @@ def retrain_classifier():
 
     optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=momentum, weight_decay=l2_weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=lr_factor, patience=8)
+
+    if local_file is not None:
+        with open(local_file, 'rb') as binary2:
+            dict2 = binary2.read()
+        optim_stat = dict2['optimizer']
+        net_state = dict2['net']
+        net.load_state_dict(net_state, False)
+        optimizer.load_state_dict(optim_stat)
 
     loss = torch.nn.CrossEntropyLoss()
 
