@@ -52,10 +52,9 @@ def retrain_classifier(local_file=None):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=lr_factor, patience=8)
 
     if local_file is not None:
-        with open(local_file, 'rb') as binary2:
-            dict2 = binary2.read()
-        optim_stat = dict2['optimizer']
-        net_state = dict2['net']
+        dict2=torch.load(local_file)
+        optim_stat = dict2['optimizer']#['state']
+        net_state = dict2['model']
         net.load_state_dict(net_state, False)
         optimizer.load_state_dict(optim_stat)
 
@@ -96,4 +95,4 @@ def retrain_classifier(local_file=None):
 
 
 if __name__ == '__main__':
-    retrain_classifier()
+    retrain_classifier('./experiments/train_classifier/net_checkpoint_47280.pth')
