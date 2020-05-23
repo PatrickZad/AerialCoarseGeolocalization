@@ -2,7 +2,7 @@ from torchvision.models.vgg import vgg16_bn
 import torch.nn as nn
 import torch
 
-torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_tensor_type(torch.FloatTensor)
 
 
 class Classifier(nn.Module):
@@ -56,7 +56,7 @@ class VGG16FeatureExtractor:
             nn.Linear(4096, class_num),
             nn.Softmax(dim=1)
         )
-        return Classifier(self.conv_part, fc_part)
+        return Classifier(self.__conv_part, fc_part)
 
     def representations_of(self, input):
 
