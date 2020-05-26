@@ -14,7 +14,7 @@ from data.dataset import getResiscData
 # config
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class_num = 45
-batch_size = 64
+batch_size = 56
 lr = 0.01
 momentum = 0.9
 l2_weight_decay = 5e-4
@@ -56,6 +56,7 @@ def retrain_classifier(local_file=None):
         optim_stat = dict2['optimizer']#['state']
         net_state = dict2['model']
         net.load_state_dict(net_state, False)
+        net.to(device=device)
         optimizer.load_state_dict(optim_stat)
 
     loss = torch.nn.CrossEntropyLoss()
