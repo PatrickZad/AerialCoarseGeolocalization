@@ -2,14 +2,19 @@ from backbone.model import VGG16FeatureExtractor
 from common import *
 import os
 from skimage.transform import resize
+from skimage.io import imsave, imread
 
+from backbone.model import VGG16FeatureExtractor
 import torch
 import torch.nn as nn
+
+import numpy as np
 
 
 class LocationDetector:
     def __init__(self, feature_model, device='cuda' if torch.cuda.is_available() else 'cpu'):
-        self.__feature_model = feature_model
+
+        self.__feature_model = VGG16FeatureExtractor(vgg16_file=feature_model)
         self.__device = device
         self.__min_scale = 8
         self.__min_region = 2
@@ -76,9 +81,14 @@ class LocationDetector:
         up_data = resize(data, upsamp_size)
         return torch.tensor(up_data, device=self.__device)
 
-    def detect_location(self, target_img, query_img,heat_map):
-        target_tensor = torch.tensor(target_img / 255, dtype=torch.double, device=self.__device)
-        query_tensor = torch.tensor(query_img / 255, dtype=torch.double, device=self.__device)
+    def detect_location(self, target_img, query_img, save_heat_map=None, save_region=None):
+        target_array = np.transpose(target_img, (2, 0, 1))
+        query_array = np.transpose(query_img, (2, 0, 1))
+        target_tensor = torch.tensor(target_array / 255, dtype=torch.float, device=self.__device)
+        query_tensor = torch.tensor(query_array / 255, dtype=torch.float, device=self.__device)
+        target_tensor=torch.unsqueeze(target_tensor,0)
+        query_tensor=torch.unsqueeze(query_tensor,0)
+
         target_conv_features, target_max_features = self.__feature_model.representations_of(target_tensor)
         target_avg_features = [nn.functional.avg_pool2d(input=feature, kernel_size=2, stride=2)
                                for feature in target_conv_features]
@@ -95,11 +105,45 @@ class LocationDetector:
         score_maps = [self.__score_map(target_fusion_features[i], query_fusion_features[i],
                                        (target_img.shape[0], target_img.shape[1]))
                       for i in range(len(target_fusion_features))]
-        fusion_map = torch.mean(torch.tensor(score_maps), dim=0)
-        # TODO 2stage detection
+        fusion_map = torch.mean(torch.tensor(score_maps, device=self.__device), dim=0)
+        # 2stage detection
+        score_array = fusion_map.numpy()
+        if save_heat_map is not None:
+            imsave(save_heat_map, score_array)
 
+        thred_ada = (np.mean(score_array) + np.max(score_array)) / 2
+        binary_map = np.int(score_array > thred_ada)
+        components = connected_components(binary_map)
+        score = 0
+        region = None
+        for component in components:
+            if len(component) > 16:
+                pts = np.array(component)
+                x_min, x_max, y_min, y_max = pts[:, 0].min(), pts[:, 0].max(), pts[:, 1].min(), pts[:, 1].max()
+                crop = target_img[y_min:y_max + 1, x_min:x_max + 1, :].copy()
+                crop_tensor = torch.tensor(crop / 255, dtype=torch.double, device=self.__device)
+                crop_conv_features, crop_max_features = self.__feature_model.representations_of(crop_tensor)
+                # GA&MP
+                crop_fusion_features = [self.__global_am_pooling(crop_conv_features[i]) for i in range(3)]
+                # R-AMAC
+                crop_fusion_features += [self.__region_amac(crop_conv_features[i]) for i in range(4, 6)]
+                crop_scores = [(query_fusion_features[i] * crop_fusion_features[i]).sum()
+                               for i in range(len(query_fusion_features))]
+                crop_score = torch.mean(torch.tensor(crop_scores, device=self.__device)).numpy()
+                if crop_score > score:
+                    region = (x_min, x_max, y_min, y_max)
+        if save_region and region is not None:
+            imsave(save_region, target_img[y_min:y_max + 1, x_min:x_max + 1, :].copy())
+        return region
 
 
 if __name__ == '__main__':
-    model_filename = 'vgg16_bn-6c64b313.pth'
+    # model_filename = 'vgg16_bn-6c64b313.pth'
+    model_filename = 'net_checkpoint_47280.pth'
     model_file_path = os.path.join(proj_path, 'model_zoo', 'checkpoints', model_filename)
+    detector = LocationDetector(model_file_path)
+    map_village = imread(os.path.join(data_village_dir, 'map.jpg'))
+    frame_files = os.listdir(os.path.join(data_village_dir, 'frames'))
+    for img_file in frame_files:
+        img_array = imread(os.path.join(data_village_dir, 'frames', img_file))
+        region = detector.detect_location(map_village, img_array, 'score_map_' + img_file, 'location_' + img_file)

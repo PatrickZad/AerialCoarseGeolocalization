@@ -24,10 +24,10 @@ class VGG16FeatureExtractor:
         if vgg16_obj is not None:
             model = vgg16_obj
         elif vgg16_file is not None:
-            model = vgg16_bn()
-            with open(vgg16_file, 'rb') as file:
-                model_state_dict = file.read()
-            model.load_state_dict(model_state_dict, strict=False)
+            model = vgg16_bn(pretrained=False)
+            dict2 = torch.load(vgg16_file,map_location=device)
+            net_state = dict2['model']
+            model.load_state_dict(net_state, False)
         else:
             model = vgg16_bn(pretrained=True)
         model.to(device=device)
