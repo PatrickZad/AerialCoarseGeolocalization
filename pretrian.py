@@ -52,10 +52,11 @@ def retrain_classifier(local_file=None):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=lr_factor, patience=8)
 
     if local_file is not None:
-        dict2=torch.load(local_file)
-        optim_stat = dict2['optimizer']#['state']
+        dict2 = torch.load(local_file)
+        optim_stat = dict2['optimizer']  # ['state']
         net_state = dict2['model']
         net.load_state_dict(net_state, False)
+        net.to(device=device)
         optimizer.load_state_dict(optim_stat)
 
     loss = torch.nn.CrossEntropyLoss()
@@ -95,4 +96,4 @@ def retrain_classifier(local_file=None):
 
 
 if __name__ == '__main__':
-    retrain_classifier('./experiments/train_classifier/net_checkpoint_47280.pth')
+    retrain_classifier('model_zoo/checkpoints/net_checkpoint_47280.pth')
