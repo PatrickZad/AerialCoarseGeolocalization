@@ -14,7 +14,7 @@ import numpy as np
 class LocationDetector:
     def __init__(self, feature_model, device='cuda' if torch.cuda.is_available() else 'cpu'):
 
-        self.__feature_model = VGG16FeatureExtractor(vgg16_file=feature_model)
+        self.__feature_model = VGG16FeatureExtractor(vgg16_file=feature_model,device=device)
         self.__device = device
         self.__min_scale = 8
         self.__min_region = 2
@@ -141,7 +141,7 @@ if __name__ == '__main__':
     # model_filename = 'vgg16_bn-6c64b313.pth'
     model_filename = 'net_checkpoint_47280.pth'
     model_file_path = os.path.join(proj_path, 'model_zoo', 'checkpoints', model_filename)
-    detector = LocationDetector(model_file_path)
+    detector = LocationDetector(model_file_path,device='cpu')
     map_village = imread(os.path.join(data_village_dir, 'map.jpg'))
     frame_files = os.listdir(os.path.join(data_village_dir, 'frames'))
     for img_file in frame_files:
