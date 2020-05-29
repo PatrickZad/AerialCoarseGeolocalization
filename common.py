@@ -8,6 +8,7 @@ base_dir = os.path.dirname(proj_path)
 dataset_common_dir = os.path.join(base_dir, 'Datasets')
 data_village_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'village')
 data_gravel_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'gravel_pit')
+expr_base = os.path.join(proj_path, 'experiments')
 
 
 class ImgConnectedComponentUnionFind:
