@@ -14,18 +14,20 @@ import numpy as np
 class LocationDetector:
     def __init__(self, feature_model, device='cuda' if torch.cuda.is_available() else 'cpu'):
 
-        self.__feature_model = VGG16FeatureExtractor(vgg16_file=feature_model,device=device)
+        self.__feature_model = VGG16FeatureExtractor(vgg16_file=feature_model, device=device)
         self.__device = device
         self.__min_scale = 8
         self.__min_region = 2
         # self.__avg_poolinger = nn.AvgPool2d(kernel_size=2, stride=2)
 
     def __global_am_pooling(self, feature_map):
-        max_map = torch.max(feature_map, dim=-1)
-        max_vector = torch.max(max_map, dim=-1)
+        # max_map = torch.max(feature_map, dim=-1)
+        # max_vector = torch.max(max_map, dim=-1)
+        max_map=feature_map.max(dim=-1)[0]
+        max_vector=max_map.max(dim=-1)[0]
         sum_map = torch.sum(feature_map, dim=-1)
         sum_map = torch.sum(sum_map, dim=-1)
-        avg_vector = sum_map / (feature_map.shape[1] * feature_map.shape[2])
+        avg_vector = sum_map / (feature_map.shape[-1] * feature_map.shape[-2])
         '''channel_size = feature_map.shape[0]
         max_vector = torch.tensor([feature_map[i, :, :].max() 
                                    for i in range(channel_size)], device=self.__device)
@@ -34,7 +36,7 @@ class LocationDetector:
         return torch.cat([avg_vector, max_vector], dim=0)
 
     def __region_amac(self, feature_map):
-        c, h, w = feature_map.shape  # feature_map.shape[1], feature_map.shape[2]
+        c, h, w = feature_map.shape[1:]  # feature_map.shape[1], feature_map.shape[2]
         max_r = min(h, w)
         if h == w:
             m = 1
@@ -83,7 +85,7 @@ class LocationDetector:
 
     def __img2tensorbatch(self, img):
         img_array = np.transpose(img, (2, 0, 1))
-        img_tensor = torch.tensor(img_array / 255, dtype=float, device=self.__device)
+        img_tensor = torch.tensor(img_array / 255, dtype=torch.float, device=self.__device)
         img_tensor = torch.unsqueeze(img_tensor, 0)
         return img_tensor
 
@@ -94,16 +96,17 @@ class LocationDetector:
         # A&MP
         img_avg_features = [nn.functional.avg_pool2d(input=feature, kernel_size=2, stride=2)
                             for feature in img_conv_features]
-        img_fusion_features = [torch.cat([img_avg_features[i], img_max_features[i]], dim=0)
+        img_fusion_features = [torch.cat([img_avg_features[i], img_max_features[i]], dim=1)
                                for i in range(len(img_avg_features))]
         if save_path is not None:
             torch.save(img_fusion_features, save_path)
+
         return img_fusion_features
 
     def loc_fusion_features(self, img):
         img_tensor = self.__img2tensorbatch(img)
 
-        img_conv_features, img_max_features = self.__feature_model.representations_of(img_tensor)
+        img_conv_features = self.__feature_model.representations_of(img_tensor, return_max=False)
         # GA&MP
         img_fusion_features = [self.__global_am_pooling(img_conv_features[i]) for i in range(3)]
         # R-AMAC
@@ -158,13 +161,15 @@ if __name__ == '__main__':
     # model_filename = 'vgg16_bn-6c64b313.pth'
     model_filename = 'net_checkpoint_47280.pth'
     model_file_path = os.path.join(proj_path, 'model_zoo', 'checkpoints', model_filename)
-    detector = LocationDetector(model_file_path,device='cpu')
+    detector = LocationDetector(model_file_path, device='cpu')
     map_village = imread(os.path.join(data_village_dir, 'map.jpg'))
     frame_files = os.listdir(os.path.join(data_village_dir, 'frames'))
-    map_features = detector.map_fusion_features(map_village, os.path.join(data_village_dir, 'map.pth'))
+    #map_features = detector.map_fusion_features(map_village, os.path.join(data_village_dir, 'map.pth'))
+    map_features = torch.load(os.path.join(data_village_dir, 'map.pth'))
     for img_file in frame_files:
         save_score_map = os.path.join(expr_base, 'localization', 'score_map_' + img_file)
         save_region = os.path.join(expr_base, 'localization', 'location_' + img_file)
         img_array = imread(os.path.join(data_village_dir, 'frames', img_file))
-        region = detector.detect_location(query_img=img_array, target_fusion_features=map_features,
+        region = detector.detect_location(target_img=map_village, query_img=img_array,
+                                          target_fusion_features=map_features,
                                           save_heat_map=save_score_map, save_region=save_region)
