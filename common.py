@@ -6,8 +6,8 @@ proj_path = os.getcwd()
 print(proj_path)
 base_dir = os.path.dirname(proj_path)
 dataset_common_dir = os.path.join(base_dir, 'Datasets')
-data_village_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'village')
-data_gravel_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'gravel_pit')
+data_village_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'village','scaled')
+data_gravel_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'gravel_pit','scaled')
 expr_base = os.path.join(proj_path, 'experiments')
 
 
