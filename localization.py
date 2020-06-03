@@ -8,15 +8,18 @@ from backbone.model import VGG16FeatureExtractor
 import torch
 import torch.nn as nn
 
+from data.dataset import RemoteDataReader
 import numpy as np
+import cv2 as cv
 
 
 class LocationDetector:
-    def __init__(self, feature_model, device='cuda' if torch.cuda.is_available() else 'cpu'):
+    def __init__(self, feature_model=None, bn=True, device='cuda' if torch.cuda.is_available() else 'cpu'):
 
-        self.__feature_model = VGG16FeatureExtractor(vgg16_file=feature_model, device=device)
+        self.__feature_model = VGG16FeatureExtractor(vgg16_file=feature_model, device=device, bn=bn) if feature_model \
+            else VGG16FeatureExtractor(device=device, bn=bn)
         self.__device = device
-        self.__min_scale = 8
+        self.__min_scale = 4096
         self.__min_region = 2
         # self.__avg_poolinger = nn.AvgPool2d(kernel_size=2, stride=2)
 
@@ -37,16 +40,17 @@ class LocationDetector:
 
     def __region_amac(self, feature_map):
         c, h, w = feature_map.shape[1:]  # feature_map.shape[1], feature_map.shape[2]
-        max_r = min(h, w)
+        short_side, long_side = (h, w) if h < w else (w, h)
         if h == w:
             m = 1
+            stride = int(h * 0.6) + 1
         else:
             long_trace = h if h > w else w
             stride = 1
             stride_left = 1
             stride_right = -1
-            ref = max_r * 0.6
-            space = long_trace - max_r
+            ref = short_side * 0.6
+            space = long_trace - short_side
             while stride < ref and stride <= space:
                 while space % stride != 0:
                     stride += 1
@@ -62,10 +66,55 @@ class LocationDetector:
         # region features
         region_max = torch.zeros(size=(1, c), device=self.__device)
         region_avg = torch.zeros(size=(1, c), device=self.__device)
-        for scale in range(1, self.__min_scale + 1):
-            if max_r < scale + 1:
+        # scale=1
+        map_max = nn.functional.max_pool2d(feature_map, kernel_size=short_side, stride=stride)
+        map_avg = nn.functional.avg_pool2d(feature_map, kernel_size=short_side, stride=stride)
+
+        map_max = nn.functional.normalize(map_max, dim=1)
+        map_max = torch.sum(map_max, dim=-1)
+        map_max = torch.sum(map_max, dim=-1)
+        # map_max = nn.functional.normalize(map_max)
+
+        map_avg = nn.functional.normalize(map_avg, dim=1)
+        map_avg = torch.sum(map_avg, dim=-1)
+        map_avg = torch.sum(map_avg, dim=-1)
+        # map_avg = nn.functional.normalize(map_avg)
+        region_max += map_max
+        region_avg += map_avg
+        last_region_w = short_side
+        for scale in range(2, self.__min_scale + 1):
+            '''if short_side < scale + 1:
+                break'''
+            if 2 * short_side / (scale + 1) < 1:
                 break
-            out_shape = (scale, scale + m - 1) if h < w else (scale + m - 1, scale)
+            region_w = 2 * short_side // (scale + 1)
+            '''if region_w == last_region_w:
+                continue'''
+            last_region_w = region_w
+            stride_s = short_side // (scale + 1)
+            stride_l = (long_side - region_w) // (scale + m - 2)
+            if stride_s == 0:
+                stride_s = 1
+            if stride_l == 0:
+                stride_l = 1
+            pooling_stride = (stride_s, stride_l) if h < w else (stride_l, stride_s)
+            map_max = nn.functional.max_pool2d(feature_map,
+                                               kernel_size=region_w, stride=pooling_stride)
+            map_avg = nn.functional.avg_pool2d(feature_map,
+                                               kernel_size=region_w, stride=pooling_stride)
+
+            map_max = nn.functional.normalize(map_max, dim=1)
+            map_max = torch.sum(map_max, dim=-1)
+            map_max = torch.sum(map_max, dim=-1)
+            # map_max = nn.functional.normalize(map_max)
+
+            map_avg = nn.functional.normalize(map_avg, dim=1)
+            map_avg = torch.sum(map_avg, dim=-1)
+            map_avg = torch.sum(map_avg, dim=-1)
+            # map_avg = nn.functional.normalize(map_avg)
+            region_max += map_max
+            region_avg += map_avg
+            '''out_shape = (scale, scale + m - 1) if h < w else (scale + m - 1, scale)
             map_max = nn.functional.adaptive_max_pool2d(feature_map, output_size=out_shape)
             map_max = torch.sum(map_max, dim=-1)
             map_max = torch.sum(map_max, dim=-1)
@@ -75,7 +124,7 @@ class LocationDetector:
             map_avg = torch.sum(map_avg, dim=-1)
             map_avg = torch.sum(map_avg, dim=-1)
             l2norm_avg = nn.functional.normalize(map_avg)
-            region_avg += l2norm_avg
+            region_avg += l2norm_avg'''
         region_max = nn.functional.normalize(region_max)
         region_avg = nn.functional.normalize(region_avg)
         return torch.cat([region_avg, region_max], dim=-1)
@@ -99,10 +148,21 @@ class LocationDetector:
         img_tensor = self.__img2tensorbatch(img)
 
         img_conv_features, img_max_features = self.__feature_model.representations_of(img_tensor)
-        # A&MP
+        '''# A&MP
         img_avg_features = [nn.functional.avg_pool2d(input=feature, kernel_size=2, stride=2)
                             for feature in img_conv_features]
         img_fusion_features = [torch.cat([img_avg_features[i], img_max_features[i]], dim=1)
+                               for i in range(len(img_avg_features))]'''
+        # A&MP
+        img_avg_features = [nn.functional.avg_pool2d(input=feature, kernel_size=2, stride=2)
+                            for feature in img_max_features]
+        # img_avg_features = [nn.functional.normalize(input=feature, dim=1)
+        #                     for feature in img_avg_features]
+        img_max2_features = [nn.functional.max_pool2d(input=feature, kernel_size=2, stride=2)
+                             for feature in img_max_features]
+        # img_max2_features = [nn.functional.normalize(input=feature, dim=1)
+        #                      for feature in img_max2_features]
+        img_fusion_features = [torch.cat([img_avg_features[i], img_max2_features[i]], dim=1)
                                for i in range(len(img_avg_features))]
         if save_path is not None:
             torch.save(img_fusion_features, save_path)
@@ -112,7 +172,8 @@ class LocationDetector:
     def loc_fusion_features(self, img):
         img_tensor = self.__img2tensorbatch(img)
 
-        img_conv_features = self.__feature_model.representations_of(img_tensor, return_max=False)
+        # img_conv_features = self.__feature_model.representations_of(img_tensor, return_max=False)
+        _, img_conv_features = self.__feature_model.representations_of(img_tensor)
         # GA&MP
         img_fusion_features = [self.__global_am_pooling(img_conv_features[i]) for i in range(3)]
         # R-AMAC
@@ -136,10 +197,22 @@ class LocationDetector:
         # 2stage detection
         score_array = fusion_map.mean(axis=0)
         if save_heat_map is not None:
+            '''
             imsave(save_heat_map, score_array)
             for i in range(len(score_maps)):
                 imsave(save_heat_map[:-4] + '_s' + str(i) + save_heat_map[-4:], score_maps[i])
+            '''
+            float_01_img = score_array / score_array.max()
+            int8_img = np.uint8(float_01_img * 255)
+            heat_map = cv.applyColorMap(int8_img, cv.COLORMAP_JET)
+            cv.imwrite(save_heat_map, heat_map)
 
+            for i in range(len(score_maps)):
+                float_img = score_maps[i] / score_maps[i].max()
+                int_img = np.uint8(float_img * 255)
+                sub_heat_map = cv.applyColorMap(int_img, cv.COLORMAP_JET)
+                cv.imwrite(save_heat_map[:-4] + '_s' + str(i) + save_heat_map[-4:], sub_heat_map)
+            ''''''
         '''thred_ada = (np.mean(score_array) + np.max(score_array)) / 2
         binary_map = np.int(score_array > thred_ada)
         components = connected_components(binary_map)
@@ -167,29 +240,39 @@ class LocationDetector:
 
 
 if __name__ == '__main__':
+    expr_sub_dir = 'vgg_nobn'
     # model_filename = 'vgg16_bn-6c64b313.pth'
     model_filename = 'net_checkpoint_47280.pth'
     model_file_path = os.path.join(proj_path, 'model_zoo', 'checkpoints', model_filename)
-    detector = LocationDetector(model_file_path, device='cpu')
+    # detector = LocationDetector(model_file_path, device='cpu')
+    # detector = LocationDetector(device='cpu')
+    detector = LocationDetector(device='cpu', bn=False)
     map_village = imread(os.path.join(data_village_dir, 'map.jpg'))
     frame_files = os.listdir(os.path.join(data_village_dir, 'frames'))
     map_features = detector.map_fusion_features(map_village, os.path.join(data_village_dir, 'map.pth'))
     # map_features = torch.load(os.path.join(data_village_dir, 'map.pth'))
     for img_file in frame_files:
-        save_score_map = os.path.join(expr_base, 'localization', 'village', 'score_map_' + img_file)
+        save_score_map = os.path.join(expr_base, 'localization', 'village', expr_sub_dir, 'score_map_' + img_file)
         save_region = os.path.join(expr_base, 'localization', 'village', 'location_' + img_file)
         img_array = imread(os.path.join(data_village_dir, 'frames', img_file))
-        region = detector.detect_location(target_img=map_village, query_img=img_array,
-                                          target_fusion_features=map_features,
-                                          save_heat_map=save_score_map, save_region=save_region)
+        detector.detect_location(target_img=map_village, query_img=img_array,
+                                 target_fusion_features=map_features,
+                                 save_heat_map=save_score_map, save_region=save_region)
     map_gravel = imread(os.path.join(data_gravel_dir, 'map.jpg'))
     frame_files = os.listdir(os.path.join(data_gravel_dir, 'frames'))
     map_features = detector.map_fusion_features(map_gravel, os.path.join(data_gravel_dir, 'map.pth'))
     # map_features = torch.load(os.path.join(data_gravel_dir, 'map.pth'))
     for img_file in frame_files:
-        save_score_map = os.path.join(expr_base, 'localization', 'gravel_pit', 'score_map_' + img_file)
+        save_score_map = os.path.join(expr_base, 'localization', 'gravel_pit', expr_sub_dir, 'score_map_' + img_file)
         save_region = os.path.join(expr_base, 'localization', 'gravel_pit', 'location_' + img_file)
         img_array = imread(os.path.join(data_gravel_dir, 'frames', img_file))
-        region = detector.detect_location(target_img=map_gravel, query_img=img_array,
-                                          target_fusion_features=map_features,
-                                          save_heat_map=save_score_map, save_region=save_region)
+        detector.detect_location(target_img=map_gravel, query_img=img_array,
+                                 target_fusion_features=map_features,
+                                 save_heat_map=save_score_map, save_region=save_region)
+    rs_data = RemoteDataReader()
+    for id, target, query in rs_data:
+        target_features = detector.map_fusion_features(target)
+        save_score_map = os.path.join(expr_base, 'localization', 'remote', expr_sub_dir, 'score_map_' + id + '.jpg')
+        detector.detect_location(target_img=target, query_img=query,
+                                 target_fusion_features=target_features,
+                                 save_heat_map=save_score_map)

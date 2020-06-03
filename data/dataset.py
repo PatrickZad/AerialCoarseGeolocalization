@@ -71,3 +71,25 @@ def getResiscData(train_proportion=0.8, device='cpu'):
             img_file = img_files[indices[i]]
             val_files.append(os.path.join(scene, img_file))
     return ResiscDataset(train_files, device, categories), ResiscDataset(val_files, device, categories)
+
+
+class RemoteDataReader:
+    def __init__(self):
+        self.__ids = []
+        with open(os.path.join(data_rs_dir, 'ids'), 'r') as id_file:
+            for line in id_file.readlines():
+                self.__ids.append(line[:-1])
+        self.__length = len(self.__ids)
+        self.__next_id = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.__next_id == self.__length:
+            raise StopIteration
+        id = self.__ids[self.__next_id]
+        map = io.imread(os.path.join(data_rs_dir, id + '.jpg'))
+        query = io.imread(os.path.join(data_rs_dir, id + '_q.jpg'))
+        self.__next_id += 1
+        return id, map, query

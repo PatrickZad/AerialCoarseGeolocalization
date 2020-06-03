@@ -38,7 +38,7 @@ def retrain_classifier(local_file=None):
 
     train_dataset, val_dataset = getResiscData(device=device)
 
-    feature_extractor = VGG16FeatureExtractor(device=device)
+    feature_extractor = VGG16FeatureExtractor(device=device, bn=False)
     net = feature_extractor.new_classifier(class_num)
     net.train()
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
