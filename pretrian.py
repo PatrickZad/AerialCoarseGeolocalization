@@ -14,7 +14,7 @@ from data.dataset import getResiscData
 # config
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class_num = 45
-batch_size = 56
+batch_size = 10
 lr = 0.01
 momentum = 0.9
 l2_weight_decay = 5e-4
@@ -96,4 +96,5 @@ def retrain_classifier(local_file=None):
 
 
 if __name__ == '__main__':
-    retrain_classifier('model_zoo/checkpoints/net_checkpoint_47280.pth')
+    # retrain_classifier('model_zoo/checkpoints/net_checkpoint_47280.pth')
+    retrain_classifier()

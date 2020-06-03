@@ -21,8 +21,8 @@ class ResiscDataset(Dataset):
 
     def __getitem__(self, idx):
         global iter
-        img_array = io.imread(os.path.join(self.common_path, self.file_paths[idx]))  # h * w *c RGB image array
-        img_class = self.file_paths[idx].split('/')[0]
+        img_array = io.imread(os.path.join(self.common_path, self.file_paths[idx][0],self.file_paths[idx][1]))  # h * w *c RGB image array
+        img_class = self.file_paths[idx][0]
         class_idx = self.categories[img_class]
         '''# random rotation
         rot_img, corners = aug.adaptive_rot(img_array)
@@ -66,10 +66,10 @@ def getResiscData(train_proportion=0.8, device='cpu'):
         img_files = os.listdir(os.path.join(data_base, scene))
         for i in range(int(indices.shape[0] * train_proportion)):
             img_file = img_files[indices[i]]
-            train_files.append(os.path.join(scene, img_file))
+            train_files.append((scene, img_file))
         for i in range(int(indices.shape[0] * train_proportion), indices.shape[0]):
             img_file = img_files[indices[i]]
-            val_files.append(os.path.join(scene, img_file))
+            val_files.append((scene, img_file))
     return ResiscDataset(train_files, device, categories), ResiscDataset(val_files, device, categories)
 
 
