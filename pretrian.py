@@ -14,8 +14,8 @@ from data.dataset import getResiscData
 # config
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class_num = 45
-batch_size = 10
-lr = 0.01
+batch_size = 78
+lr = 0.0001
 momentum = 0.9
 l2_weight_decay = 5e-4
 lr_factor = 0.1
