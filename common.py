@@ -1,15 +1,17 @@
 import os
 import numpy as  np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 # os.environ['CUDA_VISIBLE_DEVICES']='2'
 proj_path = os.getcwd()
 print(proj_path)
 base_dir = os.path.dirname(proj_path)
 dataset_common_dir = os.path.join(base_dir, 'Datasets')
-data_village_dir = os.path.join(dataset_common_dir, 'village', 'scaled')
-data_gravel_dir = os.path.join(dataset_common_dir, 'gravel_pit', 'scaled')
+data_village_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'village', 'scaled')
+data_gravel_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'gravel_pit', 'scaled')
 expr_base = os.path.join(proj_path, 'experiments')
-data_rs_dir = os.path.join(dataset_common_dir, 'remote')
+data_rs_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'remote')
 
 
 class ImgConnectedComponentUnionFind:
@@ -123,3 +125,17 @@ def connected_components(binary_img):
                 search(binary_img, (i, j), searched_map, comp_pts)
                 components.append(comp_pts)
     return components
+
+
+def feature_visualize(feature_arr, save_path):
+    plt.style.use('seaborn-whitegrid')
+    bs, c, h, w = feature_arr.shape
+    data_x = np.array(range(c))
+    max_val=feature_arr.max()
+    min_val=feature_arr.min()
+    fig=plt.figure()
+    ax=plt.axes()
+
+    ax.plot()
+
+    ax.set()

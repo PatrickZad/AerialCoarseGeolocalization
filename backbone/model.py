@@ -8,14 +8,14 @@ torch.set_default_tensor_type(torch.FloatTensor)
 class Classifier(nn.Module):
     def __init__(self, conv_component, fc_component):
         super(Classifier, self).__init__()
-        self.__conv = conv_component
-        self.__fc = fc_component
+        self._conv = conv_component
+        self._fc = fc_component
 
     def forward(self, input):
         batch_size = input.shape[0]
-        conv_feature = self.__conv(input)
+        conv_feature = self._conv(input)
         feature = torch.reshape(conv_feature, (batch_size, -1))
-        out = self.__fc(feature)
+        out = self._fc(feature)
         return out
 
 
@@ -32,22 +32,22 @@ class VGG16FeatureExtractor:
             model = vgg16_bn(pretrained=True) if bn else vgg16(pretrained=True)
         model.to(device=device)
         model.eval()
-        self.__split_net(model, bn)
-        self.__device = device
+        self._split_net(model, bn)
+        self._device = device
         # self.__max_poolinger = nn.MaxPool2d(kernel_size=2, stride=2)
 
-    def __split_net(self, model, bn):
+    def _split_net(self, model, bn):
         all_layers = list(model.children())
-        self.__conv_part = all_layers[0]
+        self._conv_part = all_layers[0]
         conv_layers = list(all_layers[0].children())
         if bn:
-            self.__blocks = [nn.Sequential(*conv_layers[:6]), nn.Sequential(*conv_layers[7:13]),
-                             nn.Sequential(*conv_layers[14:23]), nn.Sequential(*conv_layers[24:33]),
-                             nn.Sequential(*conv_layers[34:-1])]
+            self._blocks = [nn.Sequential(*conv_layers[:6]), nn.Sequential(*conv_layers[7:13]),
+                            nn.Sequential(*conv_layers[14:23]), nn.Sequential(*conv_layers[24:33]),
+                            nn.Sequential(*conv_layers[34:-1])]
         else:
-            self.__blocks = [nn.Sequential(*conv_layers[:4]), nn.Sequential(*conv_layers[5:9]),
-                             nn.Sequential(*conv_layers[10:16]), nn.Sequential(*conv_layers[17:23]),
-                             nn.Sequential(*conv_layers[24:-1])]
+            self._blocks = [nn.Sequential(*conv_layers[:4]), nn.Sequential(*conv_layers[5:9]),
+                            nn.Sequential(*conv_layers[10:16]), nn.Sequential(*conv_layers[17:23]),
+                            nn.Sequential(*conv_layers[24:-1])]
 
     def new_classifier(self, class_num):
         fc_part = nn.Sequential(
@@ -60,17 +60,17 @@ class VGG16FeatureExtractor:
             nn.Linear(4096, class_num),
             nn.Softmax(dim=1)
         )
-        return Classifier(self.__conv_part, fc_part)
+        return Classifier(self._conv_part, fc_part)
 
     def representations_of(self, input, return_max=True):
         block_r = []
         max_r = []
         block_in = input
-        for blk in self.__blocks:
+        for blk in self._blocks:
             r_blk = blk(block_in)
             r_arr = r_blk.detach().numpy()
             del r_blk
-            r_t = torch.tensor(r_arr, dtype=torch.float, device=self.__device)
+            r_t = torch.tensor(r_arr, dtype=torch.float, device=self._device)
             block_r.append(r_t)
             m_blk = nn.functional.max_pool2d(input=r_t, kernel_size=2, stride=2)
             ''' m_arr=m_blk.detach().numpy()
