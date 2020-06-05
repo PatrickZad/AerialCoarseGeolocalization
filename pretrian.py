@@ -21,7 +21,7 @@ momentum = 0.9
 l2_weight_decay = 5e-4
 lr_factor = 0.1
 max_epoch = 128
-save_period = 10
+save_period = 5
 log_period = 10
 chang_lr_thred = 1e-5
 global ITER
