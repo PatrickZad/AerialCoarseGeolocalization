@@ -20,10 +20,10 @@ lr = 0.01
 momentum = 0.9
 l2_weight_decay = 5e-4
 lr_factor = 0.1
-max_epoch = 128
+max_epoch = 320
 save_period = 5
 log_period = 10
-chang_lr_thred = 1e-5
+chang_lr_thred = 1e-4
 global ITER
 ITER = 0
 global last_val_loss
@@ -87,7 +87,7 @@ def retrain_classifier(local_file=None, bn=True):
     logger.info('Start training.')
 
     optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=momentum, weight_decay=l2_weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=lr_factor, patience=8)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=lr_factor, patience=5)
 
     if local_file is not None:
         dict2 = torch.load(local_file)
