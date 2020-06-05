@@ -15,14 +15,14 @@ from data.dataset import getResiscData
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class_num = 45
 batch_size = 78
-lr = 0.0001
+lr = 0.01
 momentum = 0.9
 l2_weight_decay = 5e-4
 lr_factor = 0.1
 max_epoch = 128
 save_period = 10
 log_period = 10
-chang_lr_thred = 1e-3
+chang_lr_thred = 1e-5
 global ITER
 ITER = 0
 global last_val_loss
@@ -96,5 +96,5 @@ def retrain_classifier(local_file=None):
 
 
 if __name__ == '__main__':
-    # retrain_classifier('model_zoo/checkpoints/net_checkpoint_47280.pth')
-    retrain_classifier()
+    retrain_classifier('model_zoo/checkpoints/net_checkpoint_38880.pth')
+    #retrain_classifier()
