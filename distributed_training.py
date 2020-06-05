@@ -24,7 +24,7 @@ lr_factor = 0.1
 max_epoch = 320
 save_period = 5
 log_period = 10
-chang_lr_thred = 1e-5
+chang_lr_thred = 1e-4
 n_save = 10
 # distributed training params
 nodes = 1
@@ -55,7 +55,10 @@ def retrain_classifier(gpu_id, local_file=None, bn=True, model_prefix='net'):
     net.cuda(gpu_id)
 
     net.train()
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, num_replicas=world_size, rank=rank)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, sampler=train_sampler)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     logger.info('Load trainset: ' + str(len(train_dataset)))
@@ -63,7 +66,7 @@ def retrain_classifier(gpu_id, local_file=None, bn=True, model_prefix='net'):
     logger.info('Start training.')
 
     optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=momentum, weight_decay=l2_weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=lr_factor, patience=8)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=lr_factor, patience=5)
 
     if local_file is not None:
         dict2 = torch.load(local_file)
@@ -75,7 +78,7 @@ def retrain_classifier(gpu_id, local_file=None, bn=True, model_prefix='net'):
 
     loss_func = torch.nn.CrossEntropyLoss().cuda(gpu_id)
 
-
+    net = nn.parallel.DistributedDataParallel(net, device_ids=[gpu_id])
 
     val_loss_saved = np.array([], dtype=np.float)
     for epoch in range(max_epoch):
