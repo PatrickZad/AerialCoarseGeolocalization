@@ -32,7 +32,7 @@ global last_val_loss
 class ValPrecision(Metric):
     def __init__(self):
         super(ValPrecision, self).__init__()
-        self._count_all = 0
+        self._count_all = 0.0
         self._count_top1 = 0
         self._count_top5 = 0
         self._count_top10 = 0
@@ -45,20 +45,27 @@ class ValPrecision(Metric):
 
     def update(self, output):
         y_pred, y = output
+        y = torch.unsqueeze(y, dim=1)
         batch_size = y_pred.shape[0]
         self._count_all += batch_size
         sorted = torch.argsort(y_pred, dim=-1)
-        top1_correct = (y == sorted[:, 0]).sum()
+        mask = y == sorted[:, :1]
+        top1_correct = torch.unsqueeze(mask.sum(), dim=0).cpu().numpy()[0]
         self._count_top1 += top1_correct
-        top5_correct = (y in sorted[:, :5]).sum()
+        '''top5_correct = 0
+        top10_crrect=0
+        
+        top5_correct=torch.logi
         self._count_top5 += top5_correct
         top10_correct = (y in sorted[:, :10]).sum()
-        self._count_top10 += top10_correct
+        self._count_top10 += top10_correct'''
 
     def compute(self):
-        return self._count_top1 / self._count_all, \
+        '''return self._count_top1 / self._count_all, \
                self._count_top5 / self._count_all, \
-               self._count_top10 / self._count_all
+               self._count_top10 / self._count_all'''
+
+        return self._count_top1, self._count_top1 / self._count_all
 
 
 def retrain_classifier(local_file=None, bn=True):
@@ -68,7 +75,7 @@ def retrain_classifier(local_file=None, bn=True):
                         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger = logging.getLogger('train_logger')
 
-    train_dataset, val_dataset = getResiscData(device=device)
+    train_dataset, val_dataset = getResiscData(device=device, train_proportion=0.8)
     feature_extractor = VGG16FeatureExtractor(device=device, bn=bn)
     net = feature_extractor.new_classifier(class_num)
     net.train()
@@ -95,7 +102,7 @@ def retrain_classifier(local_file=None, bn=True):
     trainer = create_supervised_trainer(net, optimizer, loss, device=device)
     evaluator = create_supervised_evaluator(net, metrics={'loss': Loss(loss), 'precision': ValPrecision()},
                                             device=device)
-    checkpointer = ModelCheckpoint(expr_out, 'net', n_saved=10, require_empty=False)
+    checkpointer = ModelCheckpoint(expr_out, 'net_nobn', n_saved=10, require_empty=False)
 
     trainer.add_event_handler(Events.EPOCH_COMPLETED(every=save_period), checkpointer,
                               {'model': net, 'optimizer': optimizer})
@@ -119,16 +126,16 @@ def retrain_classifier(local_file=None, bn=True):
         val_loss = metrics['loss']
         scheduler.step(val_loss)
 
-        top1, top5, top10 = metrics['precision']
+        top1_count, top1_p = metrics['precision']
 
-        logger.info("Validation Results - Epoch: {} Val_loss: {}\nVal_precision:top1 {}, top5 {}, top10 {}"
-                    .format(trainer.state.epoch, metrics['loss'], top1, top5, top10))
-        print("Validation Results - Epoch: {} Val_loss: {}"
-              .format(trainer.state.epoch, metrics['loss'], top1, top5, top10))
+        logger.info("Validation Results - Epoch: {} Val_loss: {} Val_precision:count {} top1 {}"
+                    .format(trainer.state.epoch, metrics['loss'], top1_count, top1_p))
+        print("Validation Results - Epoch: {} Val_loss: {} Val_precision:count {} top1 {}"
+              .format(trainer.state.epoch, metrics['loss'], top1_count, top1_p))
 
     trainer.run(train_loader, max_epochs=max_epoch)
 
 
 if __name__ == '__main__':
-    # retrain_classifier('model_zoo/checkpoints/net_bn_final.pth')
-    retrain_classifier()
+    # retrain_classifier('model_zoo/checkpoints/net_checkpoint_38880.pth',bn=False)
+    retrain_classifier(bn=False)
