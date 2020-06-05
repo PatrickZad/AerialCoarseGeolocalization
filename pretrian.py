@@ -3,7 +3,8 @@ from backbone.model import VGG16FeatureExtractor
 
 from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
 from ignite.handlers import ModelCheckpoint
-from ignite.metrics import Loss
+from ignite.metrics import Loss, Metric
+
 import logging
 
 import torch
@@ -20,25 +21,62 @@ momentum = 0.9
 l2_weight_decay = 5e-4
 lr_factor = 0.1
 max_epoch = 128
-save_period = 10
+save_period = 5
 log_period = 10
 chang_lr_thred = 1e-5
 global ITER
 ITER = 0
 global last_val_loss
-last_val_loss = 0
 
 
-def retrain_classifier(local_file=None):
+class ValPrecision(Metric):
+    def __init__(self):
+        super(ValPrecision, self).__init__()
+        self._count_all = 0.0
+        self._count_top1 = 0
+        self._count_top5 = 0
+        self._count_top10 = 0
+
+    def reset(self):
+        self._count_all = 0
+        self._count_top1 = 0
+        self._count_top5 = 0
+        self._count_top10 = 0
+
+    def update(self, output):
+        y_pred, y = output
+        y = torch.unsqueeze(y, dim=1)
+        batch_size = y_pred.shape[0]
+        self._count_all += batch_size
+        sorted = torch.argsort(y_pred, dim=-1)
+        mask = y == sorted[:, :1]
+        top1_correct = torch.unsqueeze(mask.sum(), dim=0).cpu().numpy()[0]
+        self._count_top1 += top1_correct
+        '''top5_correct = 0
+        top10_crrect=0
+        
+        top5_correct=torch.logi
+        self._count_top5 += top5_correct
+        top10_correct = (y in sorted[:, :10]).sum()
+        self._count_top10 += top10_correct'''
+
+    def compute(self):
+        '''return self._count_top1 / self._count_all, \
+               self._count_top5 / self._count_all, \
+               self._count_top10 / self._count_all'''
+
+        return self._count_top1, self._count_top1 / self._count_all
+
+
+def retrain_classifier(local_file=None, bn=True):
     expr_out = os.path.join(proj_path, 'experiments', 'train_classifier')
     logging.basicConfig(filename=os.path.join(expr_out, 'train_log'),
                         level=logging.INFO,
                         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger = logging.getLogger('train_logger')
 
-    train_dataset, val_dataset = getResiscData(device=device)
-
-    feature_extractor = VGG16FeatureExtractor(device=device, bn=False)
+    train_dataset, val_dataset = getResiscData(device=device, train_proportion=0.8)
+    feature_extractor = VGG16FeatureExtractor(device=device, bn=bn)
     net = feature_extractor.new_classifier(class_num)
     net.train()
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -62,8 +100,9 @@ def retrain_classifier(local_file=None):
     loss = torch.nn.CrossEntropyLoss()
 
     trainer = create_supervised_trainer(net, optimizer, loss, device=device)
-    evaluator = create_supervised_evaluator(net, metrics={'loss': Loss(loss)}, device=device)
-    checkpointer = ModelCheckpoint(expr_out, 'net', n_saved=10, require_empty=False)
+    evaluator = create_supervised_evaluator(net, metrics={'loss': Loss(loss), 'precision': ValPrecision()},
+                                            device=device)
+    checkpointer = ModelCheckpoint(expr_out, 'net_nobn', n_saved=10, require_empty=False)
 
     trainer.add_event_handler(Events.EPOCH_COMPLETED(every=save_period), checkpointer,
                               {'model': net, 'optimizer': optimizer})
@@ -80,21 +119,23 @@ def retrain_classifier(local_file=None):
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(trainer):
-        global last_val_loss
+
         evaluator.run(val_loader)
         metrics = evaluator.state.metrics
 
         val_loss = metrics['loss']
         scheduler.step(val_loss)
 
-        logger.info("Validation Results - Epoch: {} Val_loss: {}"
-                    .format(trainer.state.epoch, metrics['loss']))
-        print("Validation Results - Epoch: {} Val_loss: {}"
-              .format(trainer.state.epoch, metrics['loss']))
+        top1_count, top1_p = metrics['precision']
+
+        logger.info("Validation Results - Epoch: {} Val_loss: {} Val_precision:count {} top1 {}"
+                    .format(trainer.state.epoch, metrics['loss'], top1_count, top1_p))
+        print("Validation Results - Epoch: {} Val_loss: {} Val_precision:count {} top1 {}"
+              .format(trainer.state.epoch, metrics['loss'], top1_count, top1_p))
 
     trainer.run(train_loader, max_epochs=max_epoch)
 
 
 if __name__ == '__main__':
-    retrain_classifier('model_zoo/checkpoints/net_checkpoint_38880.pth')
-    #retrain_classifier()
+    # retrain_classifier('model_zoo/checkpoints/net_checkpoint_38880.pth',bn=False)
+    retrain_classifier(bn=False)
