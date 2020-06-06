@@ -28,9 +28,9 @@ chang_lr_thred = 1e-4
 n_save = 10
 # distributed training params
 nodes = 1
-gpus = 1
+gpus = 2
 world_size = nodes * gpus
-os.environ['MASTER_ADDR'] = '127.0.0.1'
+os.environ['MASTER_ADDR'] = '0.0.0.0'
 os.environ['MASTER_PORT'] = '9601'
 node_rank = 0
 
@@ -128,4 +128,4 @@ def retrain_classifier(gpu_id, local_file=None, bn=True, model_prefix='net'):
 if __name__ == '__main__':
     # retrain_classifier('model_zoo/checkpoints/net_bn_final.pth')
     t_mp.spawn(retrain_classifier, nprocs=gpus, args=(None, False, 'net_nobn'))
-    retrain_classifier()
+    #retrain_classifier()

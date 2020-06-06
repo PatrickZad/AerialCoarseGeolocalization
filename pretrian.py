@@ -15,7 +15,7 @@ from data.dataset import getResiscData
 # config
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class_num = 45
-batch_size = 78
+batch_size = 132
 lr = 0.01
 momentum = 0.9
 l2_weight_decay = 5e-4
@@ -49,7 +49,7 @@ class ValPrecision(Metric):
         batch_size = y_pred.shape[0]
         self._count_all += batch_size
         sorted = torch.argsort(y_pred, dim=-1)
-        mask = y == sorted[:, :1]
+        mask = y == sorted[:, -1:]
         top1_correct = torch.unsqueeze(mask.sum(), dim=0).cpu().numpy()[0]
         self._count_top1 += top1_correct
         '''top5_correct = 0
@@ -69,6 +69,7 @@ class ValPrecision(Metric):
 
 
 def retrain_classifier(local_file=None, bn=True):
+    prefix = 'net' if bn else 'net_nobn'
     expr_out = os.path.join(proj_path, 'experiments', 'train_classifier')
     logging.basicConfig(filename=os.path.join(expr_out, 'train_log'),
                         level=logging.INFO,
@@ -98,11 +99,14 @@ def retrain_classifier(local_file=None, bn=True):
         optimizer.load_state_dict(optim_stat)
 
     loss = torch.nn.CrossEntropyLoss()
+    if torch.cuda.device_count() > 1:
+        net = torch.nn.DataParallel(net)
+        prefix += '_mg'
 
     trainer = create_supervised_trainer(net, optimizer, loss, device=device)
     evaluator = create_supervised_evaluator(net, metrics={'loss': Loss(loss), 'precision': ValPrecision()},
                                             device=device)
-    checkpointer = ModelCheckpoint(expr_out, 'net_nobn', n_saved=10, require_empty=False)
+    checkpointer = ModelCheckpoint(expr_out, prefix, n_saved=10, require_empty=False)
 
     trainer.add_event_handler(Events.EPOCH_COMPLETED(every=save_period), checkpointer,
                               {'model': net, 'optimizer': optimizer})
@@ -137,5 +141,5 @@ def retrain_classifier(local_file=None, bn=True):
 
 
 if __name__ == '__main__':
-    # retrain_classifier('model_zoo/checkpoints/net_checkpoint_38880.pth',bn=False)
-    retrain_classifier(bn=False)
+    retrain_classifier('./model_zoo/checkpoints/net_nobn_checkpoint_3240.pth', bn=False)
+    # retrain_classifier(bn=False)
