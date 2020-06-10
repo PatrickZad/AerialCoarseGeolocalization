@@ -12,6 +12,7 @@ data_village_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'vi
 data_gravel_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'gravel_pit', 'scaled')
 expr_base = os.path.join(proj_path, 'experiments')
 data_rs_dir = os.path.join(dataset_common_dir, 'AerialGeolocalization', 'remote')
+model_dir = os.path.join(proj_path, 'model_zoo', 'check_points')
 
 
 class ImgConnectedComponentUnionFind:
@@ -125,17 +126,3 @@ def connected_components(binary_img):
                 search(binary_img, (i, j), searched_map, comp_pts)
                 components.append(comp_pts)
     return components
-
-
-def feature_visualize(feature_arr, save_path):
-    plt.style.use('seaborn-whitegrid')
-    bs, c, h, w = feature_arr.shape
-    data_x = np.array(range(c))
-    max_val=feature_arr.max()
-    min_val=feature_arr.min()
-    fig=plt.figure()
-    ax=plt.axes()
-
-    ax.plot()
-
-    ax.set()

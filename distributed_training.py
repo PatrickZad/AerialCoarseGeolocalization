@@ -1,5 +1,5 @@
 from common import *
-from backbone.model import VGG16FeatureExtractor
+from backbone.models import VGGFeatureExtractor
 
 import torch.multiprocessing as t_mp
 import torch.nn as nn
@@ -49,7 +49,7 @@ def retrain_classifier(gpu_id, local_file=None, bn=True, model_prefix='net'):
     torch.cuda.set_device(gpu_id)
 
     train_dataset, val_dataset = getResiscData(device=device)
-    feature_extractor = VGG16FeatureExtractor(device=device, bn=bn)
+    feature_extractor = VGGFeatureExtractor(device=device, bn=bn)
     net = feature_extractor.new_classifier(class_num)
 
     net.cuda(gpu_id)

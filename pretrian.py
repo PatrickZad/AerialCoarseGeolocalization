@@ -1,5 +1,5 @@
 from common import *
-from backbone.model import VGG16FeatureExtractor
+from backbone.models import VGGFeatureExtractor
 
 from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
 from ignite.handlers import ModelCheckpoint
@@ -77,7 +77,7 @@ def retrain_classifier(local_file=None, bn=True):
     logger = logging.getLogger('train_logger')
 
     train_dataset, val_dataset = getResiscData(device=device, train_proportion=0.8)
-    feature_extractor = VGG16FeatureExtractor(device=device, bn=bn)
+    feature_extractor = VGGFeatureExtractor(device=device, bn=bn)
     net = feature_extractor.new_classifier(class_num)
     net.train()
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
