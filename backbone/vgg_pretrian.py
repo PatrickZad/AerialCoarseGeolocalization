@@ -1,9 +1,16 @@
+import os
+import sys
+
+proj_path = os.path.abspath('..')
+sys.path.append(proj_path)
+
 from common import *
-from backbone.models import VGGFeatureExtractor
+from backbone import ExtractorFactory
 
 from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
-from ignite.handlers import ModelCheckpoint
-from ignite.metrics import Loss, Metric
+from ignite.metrics import Loss
+
+from .ignite_expand import ValPrecision, DataParaCheckModelCheckpoint
 
 import logging
 
@@ -24,51 +31,19 @@ max_epoch = 320
 save_period = 5
 log_period = 10
 chang_lr_thred = 1e-4
+
 global ITER
 ITER = 0
 global last_val_loss
 
-
-class ValPrecision(Metric):
-    def __init__(self):
-        super(ValPrecision, self).__init__()
-        self._count_all = 0.0
-        self._count_top1 = 0
-        self._count_top5 = 0
-        self._count_top10 = 0
-
-    def reset(self):
-        self._count_all = 0
-        self._count_top1 = 0
-        self._count_top5 = 0
-        self._count_top10 = 0
-
-    def update(self, output):
-        y_pred, y = output
-        y = torch.unsqueeze(y, dim=1)
-        batch_size = y_pred.shape[0]
-        self._count_all += batch_size
-        sorted = torch.argsort(y_pred, dim=-1)
-        mask = y == sorted[:, -1:]
-        top1_correct = torch.unsqueeze(mask.sum(), dim=0).cpu().numpy()[0]
-        self._count_top1 += top1_correct
-        '''top5_correct = 0
-        top10_crrect=0
-        
-        top5_correct=torch.logi
-        self._count_top5 += top5_correct
-        top10_correct = (y in sorted[:, :10]).sum()
-        self._count_top10 += top10_correct'''
-
-    def compute(self):
-        '''return self._count_top1 / self._count_all, \
-               self._count_top5 / self._count_all, \
-               self._count_top10 / self._count_all'''
-
-        return self._count_top1, self._count_top1 / self._count_all
+data_para = torch.cuda.device_count() > 1
 
 
-def retrain_classifier(local_file=None, bn=True):
+def retrain_classifier(extr_type, local_file=None):
+    if 'bn' in extr_type:
+        bn = True
+    else:
+        bn = False
     prefix = 'net' if bn else 'net_nobn'
     expr_out = os.path.join(proj_path, 'experiments', 'train_classifier')
     logging.basicConfig(filename=os.path.join(expr_out, 'train_log'),
@@ -77,7 +52,8 @@ def retrain_classifier(local_file=None, bn=True):
     logger = logging.getLogger('train_logger')
 
     train_dataset, val_dataset = getResiscData(device=device, train_proportion=0.8)
-    feature_extractor = VGGFeatureExtractor(device=device, bn=bn)
+    feature_extractor = ExtractorFactory.create_feature_extractor(extr_type, device)
+
     net = feature_extractor.new_classifier(class_num)
     net.train()
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -92,21 +68,21 @@ def retrain_classifier(local_file=None, bn=True):
 
     if local_file is not None:
         dict2 = torch.load(local_file)
-        optim_stat = dict2['optimizer']  # ['state']
+        optim_stat = dict2['optimizer']
         net_state = dict2['model']
         net.load_state_dict(net_state, False)
         net.to(device=device)
         optimizer.load_state_dict(optim_stat)
 
     loss = torch.nn.CrossEntropyLoss()
+
     if torch.cuda.device_count() > 1:
         net = torch.nn.DataParallel(net)
-        prefix += '_mg'
 
     trainer = create_supervised_trainer(net, optimizer, loss, device=device)
     evaluator = create_supervised_evaluator(net, metrics={'loss': Loss(loss), 'precision': ValPrecision()},
                                             device=device)
-    checkpointer = ModelCheckpoint(expr_out, prefix, n_saved=10, require_empty=False)
+    checkpointer = DataParaCheckModelCheckpoint(expr_out, prefix, n_saved=10, require_empty=False)
 
     trainer.add_event_handler(Events.EPOCH_COMPLETED(every=save_period), checkpointer,
                               {'model': net, 'optimizer': optimizer})
@@ -141,5 +117,6 @@ def retrain_classifier(local_file=None, bn=True):
 
 
 if __name__ == '__main__':
-    retrain_classifier('./model_zoo/checkpoints/net_nobn_checkpoint_3240.pth', bn=False)
-    # retrain_classifier(bn=False)
+    import backbone
+
+    retrain_classifier(backbone.VGG, './model_zoo/checkpoints/net_nobn_checkpoint_3240.pth')

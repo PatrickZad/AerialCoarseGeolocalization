@@ -3,6 +3,7 @@ import os
 from skimage.transform import resize
 from skimage.io import imsave, imread
 
+import loc_detect
 from backbone import ExtractorFactory
 import torch
 import torch.nn as nn
@@ -12,7 +13,7 @@ import numpy as np
 import cv2 as cv
 
 
-class LocationDetector:
+class RmacLocationDetector(loc_detect.FeatureBasedLocationDetector):
     def __init__(self, feature_model=None, device='cuda' if torch.cuda.is_available() else 'cpu',
                  min_scale=4, repeat_scale=False):
 
@@ -120,7 +121,7 @@ class LocationDetector:
         img_tensor = torch.unsqueeze(img_tensor, 0)
         return img_tensor
 
-    def map_fusion_features(self, img, save_path=None):
+    def map_features(self, img, save_path=None):
         img_tensor = self._img2tensorbatch(img)
 
         img_conv_features, img_max_features = self._feature_model.representations_of(img_tensor)
@@ -140,7 +141,7 @@ class LocationDetector:
 
         return img_fusion_features
 
-    def loc_fusion_features(self, img):
+    def loc_features(self, img):
         img_tensor = self._img2tensorbatch(img)
         _, img_conv_features = self._feature_model.representations_of(img_tensor)
         # GA&MP
@@ -151,9 +152,9 @@ class LocationDetector:
     def detect_location(self, target_img, query_img, target_fusion_features=None, query_fusion_features=None,
                         save_target_feature=None, save_heat_map=None, save_region=None):
         if not target_fusion_features:
-            target_fusion_features = self.map_fusion_features(target_img, save_target_feature)
+            target_fusion_features = self.map_features(target_img, save_target_feature)
         if not query_fusion_features:
-            query_fusion_features = self.loc_fusion_features(query_img)
+            query_fusion_features = self.loc_features(query_img)
         # score maps
 
         score_maps = [self._score_map(target_fusion_features[i], query_fusion_features[i],
@@ -281,11 +282,11 @@ if __name__ == '__main__':
         model_filename = model_filename
         model_file_path = os.path.join(proj_path, 'model_zoo', 'checkpoints',
                                        model_filename) if model_filename is not None else None
-        detector = LocationDetector(model_file_path, device='cpu', bn=bn, min_scale=fusion_min_scale,
-                                    repeat_scale=fusion_scale_repeat, is_parallel_model=is_parallel_model)
+        detector = RmacLocationDetector(model_file_path, device='cpu', bn=bn, min_scale=fusion_min_scale,
+                                        repeat_scale=fusion_scale_repeat, is_parallel_model=is_parallel_model)
         map_village = imread(os.path.join(data_village_dir, 'map.jpg'))
         frame_files = os.listdir(os.path.join(data_village_dir, 'frames'))
-        map_features = detector.map_fusion_features(map_village)
+        map_features = detector.map_features(map_village)
         for img_file in frame_files:
             save_score_map = os.path.join(expr_base, 'localization', 'village', expr_sub_dir, 'score_map_' + img_file)
             save_region = os.path.join(expr_base, 'localization', 'village', 'location_' + img_file)
@@ -295,7 +296,7 @@ if __name__ == '__main__':
                                      save_heat_map=save_score_map, save_region=save_region)
         map_gravel = imread(os.path.join(data_gravel_dir, 'map.jpg'))
         frame_files = os.listdir(os.path.join(data_gravel_dir, 'frames'))
-        map_features = detector.map_fusion_features(map_gravel)
+        map_features = detector.map_features(map_gravel)
         for img_file in frame_files:
             save_score_map = os.path.join(expr_base, 'localization', 'gravel_pit', expr_sub_dir,
                                           'score_map_' + img_file)
@@ -306,7 +307,7 @@ if __name__ == '__main__':
                                      save_heat_map=save_score_map, save_region=save_region)
         rs_data = RemoteDataReader()
         for id, target, query in rs_data:
-            target_features = detector.map_fusion_features(target)
+            target_features = detector.map_features(target)
             save_score_map = os.path.join(expr_base, 'localization', 'remote', expr_sub_dir, 'score_map_' + id + '.jpg')
             detector.detect_location(target_img=target, query_img=query,
                                      target_fusion_features=target_features,
