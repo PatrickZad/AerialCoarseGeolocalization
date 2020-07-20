@@ -5,7 +5,7 @@ proj_path = os.path.abspath('..')
 sys.path.append(proj_path)
 
 from common import *
-from backbone import ExtractorFactory
+from feat_extr import ExtractorFactory
 
 from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
 from ignite.metrics import Loss
@@ -117,6 +117,6 @@ def retrain_classifier(extr_type, local_file=None):
 
 
 if __name__ == '__main__':
-    import backbone
+    import feat_extr
 
-    retrain_classifier(backbone.VGG, './model_zoo/checkpoints/net_nobn_checkpoint_3240.pth')
+    retrain_classifier(feat_extr.VGG, './model_zoo/checkpoints/net_nobn_checkpoint_3240.pth')

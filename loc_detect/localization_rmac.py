@@ -4,7 +4,7 @@ from skimage.transform import resize
 from skimage.io import imsave, imread
 
 import loc_detect
-from backbone import ExtractorFactory
+from feat_extr import ExtractorFactory
 import torch
 import torch.nn as nn
 
@@ -240,35 +240,35 @@ class RmacLocationDetector(loc_detect.FeatureBasedLocationDetector):
 
 
 if __name__ == '__main__':
-    import backbone
+    import feat_extr
 
     expr_config_base = {'expr_subdir': 'base',
-                        'model_filename': backbone.VGG_TUNE,
+                        'model_filename': feat_extr.VGG_TUNE,
                         'fusion_min_scale': 4,
                         'fusion_scale_repeat': False,
                         'is_parallel_model': True}
     expr_config_minscale = {'expr_subdir': 'scale_m8',
-                            'model_filename': backbone.VGG_TUNE,
+                            'model_filename': feat_extr.VGG_TUNE,
                             'fusion_min_scale': 8,
                             'fusion_scale_repeat': False,
                             'is_parallel_model': True}
     expr_config_repeat_scale = {'expr_subdir': 'repeat_fusion',
-                                'model_filename': backbone.VGG_TUNE,
+                                'model_filename': feat_extr.VGG_TUNE,
                                 'fusion_min_scale': 16,
                                 'fusion_scale_repeat': True,
                                 'is_parallel_model': True}
     expr_config_bn = {'expr_subdir': 'with_bn',
-                      'model_filename': backbone.VGG_BN_TUNE,
+                      'model_filename': feat_extr.VGG_BN_TUNE,
                       'fusion_min_scale': 4,
                       'fusion_scale_repeat': False,
                       'is_parallel_model': False}
     expr_config_vgg = {'expr_subdir': 'vgg_nobn',
-                       'model_filename': backbone.VGG,
+                       'model_filename': feat_extr.VGG,
                        'fusion_min_scale': 4,
                        'fusion_scale_repeat': False,
                        'is_parallel_model': False}
     expr_config_global = {'expr_subdir': 'all_global',
-                          'model_filename': backbone.VGG_TUNE,
+                          'model_filename': feat_extr.VGG_TUNE,
                           'fusion_min_scale': 4,
                           'fusion_scale_repeat': False,
                           'is_parallel_model': True}

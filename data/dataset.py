@@ -2,9 +2,11 @@ import os
 import torch
 from torch.utils.data import Dataset
 from common import *
-from skimage import io, transform
+from skimage import io, transform, draw
+import cv2 as cv
 import numpy as np
-import data.augmentation as aug
+import data.augmentation as data_aug
+import math
 
 global iter
 iter = 0
@@ -21,7 +23,8 @@ class ResiscDataset(Dataset):
 
     def __getitem__(self, idx):
         global iter
-        img_array = io.imread(os.path.join(self.common_path, self.file_paths[idx][0],self.file_paths[idx][1]))  # h * w *c RGB image array
+        img_array = io.imread(os.path.join(self.common_path, self.file_paths[idx][0],
+                                           self.file_paths[idx][1]))  # h * w *c RGB image array
         img_class = self.file_paths[idx][0]
         class_idx = self.categories[img_class]
         '''# random rotation
@@ -52,6 +55,61 @@ class ResiscDataset(Dataset):
 
     def __len__(self):
         return len(self.file_paths)
+
+
+class OxfordBuildingsLocalization:
+    # left-top x,y roght-bottpm x,y
+    def __init__(self, test_num=2):
+        self._img_dir = os.path.join(dataset_common_dir, 'OxfordBuilding', 'imgs')
+        self._next = 0
+        gt_dir = os.path.join(dataset_common_dir, 'OxfordBuilding', 'gt')
+        self._query_bboxes = {}
+        self._img_pairs = []
+        for file in os.listdir(gt_dir):
+            if 'query' in file:
+                category = file[:-9]
+                with open(os.path.join(gt_dir, file)) as f:
+                    gt_str = f.readline().split('\n')[0]
+                    info = gt_str.split(' ')
+                    query_img = info[0][5:]
+                    box_arr = np.array(info[1:], dtype=np.float)
+                    query_box = np.int32(box_arr)
+                    self._query_bboxes[query_img] = query_box
+                with open(os.path.join(gt_dir, category + 'good.txt')) as f:
+                    filenames = f.readlines()
+                    if test_num < len(filenames):
+                        idx = np.random.randint(0, len(filenames), size=(test_num,))
+                        self._img_pairs += [(query_img, filenames[i][:-1]) for i in idx]
+                    else:
+                        self._img_pairs += [(query_img, filenames[i][:-1]) for i in range(len(filenames))]
+                with open(os.path.join(gt_dir, category + 'ok.txt')) as f:
+                    filenames = f.readlines()
+                    if test_num < len(filenames):
+                        idx = np.random.randint(0, len(filenames), size=(test_num,))
+                        self._img_pairs += [(query_img, filenames[i][:-1]) for i in idx]
+                    else:
+                        self._img_pairs += [(query_img, filenames[i][:-1]) for i in range(len(filenames))]
+                with open(os.path.join(gt_dir, category + 'junk.txt')) as f:
+                    filenames = f.readlines()
+                    if test_num < len(filenames):
+                        idx = np.random.randint(0, len(filenames), size=(test_num,))
+                        self._img_pairs += [(query_img, filenames[i][:-1]) for i in idx]
+                    else:
+                        self._img_pairs += [(query_img, filenames[i][:-1]) for i in range(len(filenames))]
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._next == len(self._img_pairs):
+            raise StopIteration
+        query_img, test_img = self._img_pairs[self._next]
+        query_img_arr = io.imread(os.path.join(self._img_dir, query_img + '.jpg'))
+        test_img_arr = io.imread(os.path.join(self._img_dir, test_img + '.jpg'))
+        bbox = self._query_bboxes[query_img]
+        query_region_arr = query_img_arr[bbox[1]:bbox[3] + 1, bbox[0]:bbox[2] + 1, :]
+        self._next += 1
+        return (query_img, test_img), (query_region_arr, test_img_arr)
 
 
 def getResiscData(train_proportion=0.8, device='cpu'):
@@ -93,3 +151,158 @@ class RemoteDataReader:
         query = io.imread(os.path.join(data_rs_dir, id + '_q.jpg'))
         self.__next_id += 1
         return id, map, query
+
+
+aug_methods = ['scale', 'rotate', 'tilt', 'erase']
+
+
+class VHRRemoteDataIter:
+    def __init__(self, dir, files, aug_options):
+        self._dir = dir
+        self._files = files
+        self._lenth = len(files)
+        self._next = 0
+        self._aug = aug_options
+
+    def __iter__(self):
+        return self
+
+    def _expand_w(self, top, bottom, left, right):
+        y1, y2 = (left[1], right[1]) if left[1] < right[1] else (right[1], left[1])
+        xl1 = math.ceil((y1 - left[1]) / (top[1] - left[1]) * (top[0] - left[0]) + left[0])
+        xl2 = math.ceil((y2 - left[1]) / (bottom[1] - left[1]) * (bottom[0] - left[0]) + left[0])
+        xr1 = int((y1 - right[1]) / (top[1] - right[1]) * (top[0] - right[0]) + right[0])
+        xr2 = int((y2 - right[1]) / (bottom[1] - right[1]) * (bottom[0] - right[0]) + right[0])
+        if xr1 < 0:
+            xr1 = xr2 + 1
+        elif xr2 < 0:
+            xr2 = xr1 + 1
+        return max(xl1, xl2), min(xr1, xr2)
+
+    def _expand_h(self, top, bottom, left, right):
+        x1, x2 = (top[0], bottom[0]) if top[0] < bottom[0] else (bottom[0], top[0])
+        yl1 = math.ceil((x1 - top[0]) / (left[0] - top[0]) * (left[1] - top[1]) + top[1])
+        yr1 = math.ceil((x2 - top[0]) / (right[0] - top[0]) * (right[1] - top[1]) + top[1])
+        yl2 = int((x1 - bottom[0]) / (left[0] - bottom[0]) * (left[1] - bottom[1]) + bottom[1])
+        yr2 = int((x2 - bottom[0]) / (right[0] - bottom[0]) * (right[1] - bottom[1]) + bottom[1])
+        if yl2 < 0:
+            yl2 = yr2 + 1
+        elif yr2 < 0:
+            yr2 = yl2 + 1
+        return max(yl1, yr1), min(yl2, yr2)
+
+    def _is_side_hori_or_verti(self, corners):
+        for i in range(3):
+            if abs(corners[i][0] - corners[i + 1][0]) < 2 or abs(corners[i][1] - corners[i + 1][1]) < 2:
+                return True
+        return False
+
+    def _rand_aug(self, aug_options, img, corners):
+        img_arr = img
+        content_corners = corners if corners is not None else default_corners(img)
+        affine_mat = np.eye(3)
+        if aug_methods[1] in aug_options:
+            phi = 360 - 360 * np.random.rand()
+            img_arr, t_mat, content_corners = rotation_phi(img_arr, phi, content_corners)
+            t_mat = np.concatenate([t_mat, np.array([[0, 0, 1]])], axis=0)
+            affine_mat = np.matmul(t_mat, affine_mat)
+        if aug_methods[2] in aug_options:
+            max_deg_cos = np.cos(60 * np.pi / 180)
+            tilt = np.random.rand() * (1 / max_deg_cos - 1) + 1
+            img_arr, t_mat, content_corners = tilt_image(img_arr, tilt, content_corners)
+            t_mat = np.concatenate([t_mat, np.array([[0, 0, 1]])], axis=0)
+            affine_mat = np.matmul(t_mat, affine_mat)
+        return img_arr, affine_mat, content_corners
+
+    def __next__(self):
+        if self._next == self._lenth:
+            raise StopIteration
+        origin_img = cv.imread(os.path.join(self._dir, self._files[self._next]))
+        origin_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
+        img_arr = origin_img.copy()
+        h, w = origin_img.shape[:2]
+        ratio = h / w if h < w else w / h
+        origin_corners = default_corners(origin_img)
+        affine_mat = np.eye(3)
+        box_h, box_w = h, w
+        corners = origin_corners.copy()
+        while True:
+            while self._is_side_hori_or_verti(corners):
+                img_arr, trans_mat, corners = self._rand_aug(self._aug, origin_img, origin_corners)
+                affine_mat = np.matmul(trans_mat, affine_mat)
+            left = corners[corners[:, 0] == corners[:, 0].min()][0]
+            right = corners[corners[:, 0] == corners[:, 0].max()][0]
+            top = corners[corners[:, 1] == corners[:, 1].min()][0]
+            bottom = corners[corners[:, 1] == corners[:, 1].max()][0]
+            # top,bottom,left,right
+            box = [min(left[1], right[1]), max(left[1], right[1]), min(top[0], bottom[0]), max(top[0], bottom[0])]
+            box_h, box_w = box[1] - box[0], box[3] - box[2]
+            box_copy = box.copy()
+            if box_w < box_h:
+                box[2], box[3] = self._expand_w(top, bottom, left, right)
+            else:
+                box[0], box[1] = self._expand_h(top, bottom, left, right)
+            box_h, box_w = box[1] - box[0], box[3] - box[2]
+            if min(box_h, box_w) < min(img_arr.shape[0], img_arr.shape[1]) / 8:
+                corners = origin_corners
+                affine_mat = np.eye(3)
+                continue
+            else:
+                break
+        len_factor_short = np.random.rand() * (1 / 6 - 1 / 7) + 1 / 9
+        len_factor_long = np.random.rand() * (1 / 9 - 1 / 10) + 1 / 14
+        len1 = min(img_arr.shape[:2]) * len_factor_short
+        len2 = max(img_arr.shape[:2]) * len_factor_long
+        len_h = int(min(min(len1, len2) if box_h < box_w else max(len1, len2), box_h)) - 1
+        len_w = int(min(len1 if len_h == len2 else len2, box_w)) - 1
+        offset_x = np.random.randint(0, box_w - len_w)
+        offset_y = np.random.randint(0, box_h - len_h)
+        crop = img_arr[box[0] + offset_y:box[0] + offset_y + len_h,
+               box[2] + offset_x:box[2] + offset_x + len_w, :].copy()
+        if aug_methods[0] in self._aug:
+            # 4~8
+            factor = 3 * np.random.rand() + 3
+            crop = cv.resize(crop, dsize=(0, 0), fx=factor, fy=factor)
+        crop_corners = np.array([[box[2] + offset_x, box[0] + offset_y],
+                                 [box[2] + offset_x + len_w, box[0] + offset_y],
+                                 [box[2] + offset_x + len_w, box[0] + offset_y + len_h],
+                                 [box[2] + offset_x, box[0] + offset_y + len_h]])
+        inv_mat = np.linalg.inv(affine_mat)
+        inv_corners = warp_pts(crop_corners, inv_mat)
+        x, y, w, h = cv.boundingRect(np.int32(inv_corners))
+        self._next += 1
+        '''rgb_img = cv.cvtColor(img_arr, cv.COLOR_BGR2RGB)
+        rr, cc = draw.polygon_perimeter([box[0], box[0], box[1], box[1]], [box[2], box[3], box[3], box[2]],
+                                        shape=rgb_img.shape, clip=True)
+        draw.set_color(rgb_img, [rr, cc], (255, 0, 0))
+        rr, cc = draw.polygon_perimeter([box_copy[0], box_copy[0], box_copy[1], box_copy[1]],
+                                        [box_copy[2], box_copy[3], box_copy[3], box_copy[2]],
+                                        shape=rgb_img.shape, clip=True)
+        draw.set_color(rgb_img, [rr, cc], (0, 255, 0))
+        rr, cc = draw.polygon_perimeter(
+            [box[0] + offset_y, box[0] + offset_y, box[0] + offset_y + len_h, box[0] + offset_y + len_h],
+            [box[2] + offset_x, box[2] + offset_x + len_w, box[2] + offset_x + len_w, box[2] + offset_x],
+            shape=rgb_img.shape, clip=True)
+        draw.set_color(rgb_img, [rr, cc], (0, 0, 255))'''
+
+        return origin_img, crop, (x, y, w, h)
+
+
+def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
+    dir = os.path.join(dataset_common_dir, 'VHR Remote Sensing')
+    dir_files = os.listdir(dir)
+    length = len(dir_files)
+    np.random.shuffle(dir_files)
+    len1 = int(length * proportion)
+    part1 = dir_files[:len1]
+    part2 = dir_files[len1:]
+    return VHRRemoteDataIter(dir, part1, aug), VHRRemoteDataIter(dir, part2, aug)
+
+
+if __name__ == '__main__':
+    train_data, test_data = getVHRRemoteDataRandomCropper()
+    counter = 0
+    for img in train_data:
+        io.imsave(os.path.join(expr_base, 'data_reader', str(counter) + '.jpg'), img)
+        counter += 1
+        print(counter)

@@ -1,5 +1,5 @@
 from common import *
-from backbone.models import VGGFeatureExtractor
+from feat_extr.models import VGGFeatureExtractor
 
 import torch.multiprocessing as t_mp
 import torch.nn as nn
