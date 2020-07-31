@@ -333,7 +333,7 @@ def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
 
 
 class SenseflyTransTrain(Dataset):
-    def __init__(self, hard_map_prob=0.2, crop_size=768) -> None:
+    def __init__(self, hard_map_prob=0.2, crop_size=768, map_size=1024) -> None:
         self._dataset_dir = os.path.join(
             dataset_common_dir, 'sensefly_trans', 'train')
         self._dirnames = os.listdir(self._dataset_dir)
@@ -345,6 +345,7 @@ class SenseflyTransTrain(Dataset):
         self._pair_list = pair_list
         self._hard_map_prob = hard_map_prob
         self._crop_size = crop_size
+        self._map_size = map_size
 
     def __getitem__(self, index: int):
         pair = self._pair_list[index]
@@ -363,7 +364,7 @@ class SenseflyTransTrain(Dataset):
         img_size = img_arr.shape[:2]
         target_size = (scale_size, scale_size / img_size[0] * img_size[1]) if img_size[0] < img_size[1] else (
             scale_size / img_size[1] * img_size[0], scale_size)
-        scaled_img_arr = cv.resize(img_arr, dsize=target_size)
+        scaled_img_arr = cv2.resize(img_arr, dsize=(int(target_size[0]), int(target_size[1])))
         crop = data_aug.rand_crop(scaled_img_arr, (self._crop_size, self._crop_size))
         erase = data_aug.rand_erase(crop)
 
@@ -371,13 +372,25 @@ class SenseflyTransTrain(Dataset):
         img_t = torch.from_numpy(img_arr.transpose(2, 0, 1).copy()).contiguous().float()
         for t, m, s in zip(img_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
-
-        map_arr = cv2.cvtColor(map_arr, cv2.COLOR_BGR2LAB)
+        target_size = (self._map_size, self._map_size / map_arr.shape[0] * map_arr.shape[1]) if map_arr.shape[0] > \
+                                                                                                map_arr.shape[1] else (
+            self._map_size / map_arr.shape[1] * map_arr.shape[0], self._map_size)
+        map_arr = cv2.resize(map_arr, dsize=(int(target_size[0]), int(target_size[1])))
+        background = np.zeros((self._map_size, self._map_size, 3))
+        background=background.astype(np.uint8)
+        diff = self._map_size - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else self._map_size - \
+                                                                                             map_arr.shape[1]
+        offset = diff // 2
+        if map_arr.shape[0] < map_arr.shape[1]:
+            background[offset:offset + map_arr.shape[0], :map_arr.shape[1], :] = map_arr
+        else:
+            background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr
+        map_arr = cv2.cvtColor(background, cv2.COLOR_BGR2LAB)
         map_t = torch.from_numpy(map_arr.transpose(2, 0, 1).copy()).contiguous().float()
         for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
 
-        return img_arr, map_arr
+        return img_t, map_t
 
     def __len__(self) -> int:
         return len(self._pair_list)

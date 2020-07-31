@@ -11,20 +11,22 @@ import logging
 import argparse
 import numpy as np
 import torch.nn as nn
-from .libs.loader import VidListv1, VidListv2
+from affinity_t_lib.libs.loader import VidListv1, VidListv2
 import torch.backends.cudnn as cudnn
 import affinity_t_lib.libs.transforms_multi as transforms
-from .model import track_match_comb as Model
-from .libs.loss import L1_loss
-from .libs.concentration_loss import ConcentrationSwitchLoss as ConcentrationLoss
-from .libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current
-from .libs.utils import diff_crop
+from affinity_t_lib.model import track_match_comb as Model
+from affinity_t_lib.libs.loss import L1_loss
+from affinity_t_lib.libs.concentration_loss import ConcentrationSwitchLoss as ConcentrationLoss
+from affinity_t_lib.libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current
+from affinity_t_lib.libs.utils import diff_crop
 
+from data.dataset import SenseflyTransTrain, SenseflyTransVal
 
 FORMAT = "[%(asctime)-15s %(filename)s:%(lineno)d %(funcName)s] %(message)s"
 logging.basicConfig(format=FORMAT)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
 
 ############################## helper functions ##############################
 
@@ -150,16 +152,21 @@ def adjust_learning_rate(args, optimizer, epoch):
 
 
 def create_loader(args):
+    '''
     dataset_train_warm = VidListv1(
         args.videoRoot, args.videoList, args.patch_size, args.rotate, args.scale)
     dataset_train = VidListv2(args.videoRoot, args.videoList, args.patch_size,
                               args.window_len, args.rotate, args.scale, args.full_size)
-
+    '''
+    dataset_train_warm = SenseflyTransTrain(crop_size=args.patch_size)
+    dataset_train = SenseflyTransTrain(crop_size=args.patch_size)
     if args.multiGPU:
         train_loader_warm = torch.utils.data.DataLoader(
-            dataset_train_warm, batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True, drop_last=True)
+            dataset_train_warm, batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True,
+            drop_last=True)
         train_loader = torch.utils.data.DataLoader(
-            dataset_train, batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True, drop_last=True)
+            dataset_train, batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True,
+            drop_last=True)
     else:
         train_loader_warm = torch.utils.data.DataLoader(
             dataset_train_warm, batch_size=args.batchsize, shuffle=True, num_workers=0, drop_last=True)
@@ -180,15 +187,16 @@ def train(args):
     if args.multiGPU:
         model = torch.nn.DataParallel(model).cuda()
         closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
-                                  F_size=torch.Size((args.batchsize//torch.cuda.device_count(), 2, args.patch_size//8, args.patch_size//8)), temp=args.temp)
+                                  F_size=torch.Size((args.batchsize // torch.cuda.device_count(), 2,
+                                                     args.patch_size // 8, args.patch_size // 8)), temp=args.temp)
         closs = nn.DataParallel(closs).cuda()
         optimizer = torch.optim.Adam(filter(
             lambda p: p.requires_grad, model._modules['module'].parameters()), args.lr)
     else:
         closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
                                   F_size=torch.Size((args.batchsize, 2,
-                                                     args.patch_size//8,
-                                                     args.patch_size//8)), temp=args.temp)
+                                                     args.patch_size // 8,
+                                                     args.patch_size // 8)), temp=args.temp)
         model.cuda()
         closs.cuda()
         optimizer = torch.optim.Adam(
@@ -214,7 +222,7 @@ def train(args):
             best_loss = train_iter(
                 args, loader_warm, model, closs, optimizer, epoch, best_loss)
         else:
-            lr = adjust_learning_rate(args, optimizer, epoch-args.wepoch)
+            lr = adjust_learning_rate(args, optimizer, epoch - args.wepoch)
             print("Base lr for epoch {}: {}.".format(
                 epoch, optimizer.param_groups[0]['lr']))
             best_loss = train_iter(args, loader, model,
@@ -227,7 +235,7 @@ def forward(frame1, frame2, model, warm_up, patch_size=None):
         output = model(frame1, frame2)
     else:
         output = model(frame1, frame2, warm_up=False,
-                       patch_size=[patch_size//8, patch_size//8])
+                       patch_size=[patch_size // 8, patch_size // 8])
         new_c = output[2]
         # gt patch
         # print("HERE2: ", frame2.size(), new_c, patch_size)
@@ -238,7 +246,6 @@ def forward(frame1, frame2, model, warm_up, patch_size=None):
 
 
 def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
-    losses = AverageMeter()
     batch_time = AverageMeter()
     losses = AverageMeter()
     c_losses = AverageMeter()
@@ -248,7 +255,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
         coord_switch_loss = nn.L1Loss()
         sc_losses = AverageMeter()
 
-    if epoch < 1 or (epoch >= args.wepoch and epoch < args.wepoch+2):
+    if epoch < 1 or (epoch >= args.wepoch and epoch < args.wepoch + 2):
         thr = None
     else:
         thr = 2.5
@@ -275,7 +282,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
                 loss = loss_ + constraint_loss
             else:
                 loss = loss_
-            if(i % args.log_interval == 0):
+            if (i % args.log_interval == 0):
                 save_vis(color2_est, frame2_var, frame1_var,
                          frame2_var, args.savepatch)
         else:
@@ -305,14 +312,14 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             if args.coord_switch_flag:
                 count += 1
                 grids = output[count]
-                C11 = output[count+1]
+                C11 = output[count + 1]
                 loss_coord = args.coord_switch * coord_switch_loss(C11, grids)
                 loss = loss_ + loss_coord
                 sc_losses.update(loss_coord.item(), frame1_var.size(0))
             else:
                 loss = loss_
 
-            if(i % args.log_interval == 0):
+            if (i % args.log_interval == 0):
                 save_vis(color2_est, Fcolor2_crop, frame1_var,
                          frame2_var, args.savepatch, new_c)
 
@@ -322,31 +329,31 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
         optimizer.step()
         batch_time.update(time.time() - end)
         end = time.time()
+        if (i + 1) % args.log_interval == 0:
+            if epoch >= args.wepoch and args.coord_switch_flag:
+                logger.info('Epoch: [{0}][{1}/{2}]\t'
+                            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                            'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
+                            'Coord switch Loss {scloss.val:.4f} ({scloss.avg:.4f})\t '
+                            'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
+                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, scloss=sc_losses, c_loss=c_losses))
+            else:
+                logger.info('Epoch: [{0}][{1}/{2}]\t'
+                            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                            'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
+                            'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
+                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, c_loss=c_losses))
 
-        if epoch >= args.wepoch and args.coord_switch_flag:
-            logger.info('Epoch: [{0}][{1}/{2}]\t'
-                        'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                        'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
-                        'Coord switch Loss {scloss.val:.4f} ({scloss.avg:.4f})\t '
-                        'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
-                            epoch, i+1, len(loader), batch_time=batch_time, loss=losses, scloss=sc_losses, c_loss=c_losses))
-        else:
-            logger.info('Epoch: [{0}][{1}/{2}]\t'
-                        'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                        'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
-                        'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
-                            epoch, i+1, len(loader), batch_time=batch_time, loss=losses, c_loss=c_losses))
-
-        if((i + 1) % args.save_interval == 0):
+        if ((i + 1) % args.save_interval == 0):
             is_best = losses.avg < best_loss
             best_loss = min(losses.avg, best_loss)
             checkpoint_path = os.path.join(
                 args.savedir, 'checkpoint_latest.pth.tar')
             save_checkpoint({
-                            'epoch': epoch + 1,
-                            'state_dict': model.state_dict(),
-                            'best_loss': best_loss,
-                            }, is_best, filename=checkpoint_path, savedir=args.savedir)
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'best_loss': best_loss,
+            }, is_best, filename=checkpoint_path, savedir=args.savedir)
             log_current(epoch, losses.avg, best_loss,
                         filename="log_current.txt", savedir=args.savedir)
 
