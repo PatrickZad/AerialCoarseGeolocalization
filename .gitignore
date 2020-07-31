@@ -2,5 +2,5 @@
 *.jpg
 *.pyc
 /.idea
-*.pth
-/.vscode
+/model_zoo
+/__pycache__

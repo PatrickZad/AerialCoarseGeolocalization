@@ -1,5 +1,7 @@
 import numpy as np
 import cv2
+import random
+import math
 
 
 def warp_pts(pts_array, homo_mat):
@@ -47,3 +49,36 @@ def center_square(img, content_corners):
         crop = cv2.copyMakeBorder(crop, top=offset, bottom=diff - offset, left=0, right=0,
                                   borderType=cv2.BORDER_CONSTANT, value=(128, 128, 128))
     return crop
+
+
+def rand_crop(img, crop_size):
+    ih, iw = img.shape[:2]
+    ch, cw = crop_size
+    h_extent = ih - ch
+    w_extent = iw - cw
+    h_offset = np.random.randint(0, h_extent + 1)
+    w_offset = np.random.randint(0, w_extent + 1)
+    return img[h_offset:h_offset + ch, w_offset:w_offset + cw, :].copy()
+
+
+def rand_erase(img, probability=0.5, sl=0.02, sh=0.4, r1=0.3, mean=(0.4914, 0.4822, 0.4465)):
+    if random.uniform(0, 1) >= probability:
+        return img
+    ih, iw = img.shape[:2]
+    for attempt in range(100):
+        area = ih * iw
+
+        target_area = random.uniform(sl, sh) * area
+        aspect_ratio = random.uniform(r1, 1 / r1)
+
+        h = int(round(math.sqrt(target_area * aspect_ratio)))
+        w = int(round(math.sqrt(target_area / aspect_ratio)))
+
+        if w < iw and h < ih:
+            x1 = random.randint(0, ih - h)
+            y1 = random.randint(0, iw - w)
+            img[x1:x1 + h, y1:y1 + w, 0] = mean[0]
+            img[x1:x1 + h, y1:y1 + w, 1] = mean[1]
+            img[x1:x1 + h, y1:y1 + w, 2] = mean[2]
+        return img
+    return img
