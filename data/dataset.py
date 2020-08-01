@@ -411,10 +411,12 @@ class SenseflyTransVal(Dataset):
         for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
 
-        return img_arr, map_arr
+        return pair[0], img_t, pair[1], map_t,pair[2]
 
     def __len__(self) -> int:
         return len(self._pair_list)
+    def get_dataset_dir(self):
+        return self._dataset_dir
 
 
 if __name__ == '__main__':
