@@ -19,37 +19,73 @@ from affinity_t_lib.libs.model import track_match_comb as Model
 
 ############################## helper functions ##############################
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='')
 
-    parser.add_argument("-o", "--out_dir", type=str, default="results/",
-                        help="output saving path")
+    # file/folder pathes
+    parser.add_argument("--encoder_dir", type=str,
+                        default='affinity_t_lib/weights/encoder_single_gpu.pth', help="pretrained encoder")
+    parser.add_argument("--decoder_dir", type=str,
+                        default='affinity_t_lib/weights/decoder_single_gpu.pth', help="pretrained decoder")
+    parser.add_argument('--resume', type=str, default='', metavar='PATH',
+                        help='path to latest checkpoint (default: none)')
+    parser.add_argument("-c", "--savedir", type=str,
+                        default="affinity_t_lib/match_track_comb/", help='checkpoints path')
+    parser.add_argument("--Resnet", type=str, default="r18",
+                        help="choose from r18 or r50")
 
-    parser.add_argument("-c", "--checkpoint_dir", type=str,
-                        default="weights/checkpoint_latest.pth.tar",
-                        help="checkpoints path")
+    # main parameters
+    parser.add_argument("--pretrainRes", action="store_true")
+    parser.add_argument("--batchsize", type=int, default=1, help="batchsize")
+    parser.add_argument('--workers', type=int, default=16)
+    parser.add_argument("--patch_size", type=int, default=256,
+                        help="crop size for localization.")
+    parser.add_argument("--full_size", type=int, default=640,
+                        help="full size for one frame.")
+    parser.add_argument("--window_len", type=int, default=2,
+                        help='number of images (2 for pair and 3 for triple)')
+    parser.add_argument("--temp", type=int, default=1,
+                        help="temprature for softmax.")
+
+    print("Begin parser arguments.")
     args = parser.parse_args()
-    args.is_train = False
+    if not os.path.exists(args.savedir):
+        os.mkdir(args.savedir)
+    args.savepatch = os.path.join(args.savedir, 'savepatch')
+    args.logfile = open(os.path.join(args.savedir, "logargs.txt"), "w")
+    args.multiGPU = args.device == torch.cuda.device_count()
+
+    if not args.multiGPU:
+        torch.cuda.set_device(args.device)
+    if not os.path.exists(args.savepatch):
+        os.mkdir(args.savepatch)
+
+    args.vis = True
+    if args.color_switch > 0:
+        args.color_switch_flag = True
+    else:
+        args.color_switch_flag = False
+    if args.coord_switch > 0:
+        args.coord_switch_flag = True
+    else:
+        args.coord_switch_flag = False
+
+    try:
+        from tensorboardX import SummaryWriter
+        global writer
+        writer = SummaryWriter()
+    except ImportError:
+        args.vis = False
+    print(' '.join(sys.argv))
+    print('\n')
+    args.logfile.write(' '.join(sys.argv))
+    args.logfile.write('\n')
+
+    for k, v in args.__dict__.items():
+        print(k, ':', v)
+        args.logfile.write('{}:{}\n'.format(k, v))
+    args.logfile.close()
     return args
 
-
-############################## testing functions ##############################
-
-def forward(frame1, frame2, model):
-    n, c, h1, w1 = frame1.size()
-    n, c, h2, w2 = frame2.size()
-    frame1_gray = frame1[:, 0].view(n, 1, h1, w1)
-    frame2_gray = frame2[:, 0].view(n, 1, h2, w2)
-    frame1_gray = frame1_gray.repeat(1, 3, 1, 1)
-    frame2_gray = frame2_gray.repeat(1, 3, 1, 1)
-
-    output = model(frame1_gray, frame2_gray, frame1, frame2)
-    # top left and bottom right
-    bbox = output[2]
-
-    return bbox.numpy()
-
-
-############################## main function ##############################
 
 if (__name__ == '__main__'):
     from data.dataset import SenseflyTransVal
