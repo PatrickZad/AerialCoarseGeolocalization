@@ -115,7 +115,7 @@ class track_match_comb(nn.Module):
 		self.coord_switch = coord_switch
 
 
-	def forward(self, img_ref, img_tar, warm_up=True, patch_size=None):
+	def forward(self, img_ref, img_tar, warm_up=True, patch_size=None,nc_only=False):
 		n, c, h_ref, w_ref = img_ref.size()
 		n, c, h_tar, w_tar = img_tar.size()
 		gray_ref = copy.deepcopy(img_ref[:,0].view(n,1,h_ref,w_ref).repeat(1,3,1,1))
@@ -148,8 +148,8 @@ class track_match_comb(nn.Module):
 				color1_est = self.decoder(Fcolor1_est)
 				output.append(color1_est)
 		else:
-			if(self.grid_flat is None):
-				self.grid_flat = create_flat_grid(Fgray2.size())
+			#if(self.grid_flat is None):
+			self.grid_flat = create_flat_grid(Fgray2.size())
 			aff_ref_tar = self.nlm(Fgray1, Fgray2)
 			aff_ref_tar = torch.nn.functional.softmax(aff_ref_tar * self.temp, dim = 2)
 			coords = torch.bmm(aff_ref_tar, self.grid_flat)
@@ -157,7 +157,8 @@ class track_match_comb(nn.Module):
 			# new_c = center2bbox(center, patch_size, h_tar, w_tar)
 			new_c = center2bbox(center, patch_size, Fgray2.size(2), Fgray2.size(3))
 			# print("center2bbox:", new_c, h_tar, w_tar)
-
+			if nc_only:
+				return (new_c*8).squeeze().cpu().detach().numpy()
 			Fgray2_crop = diff_crop(Fgray2, new_c[:,0], new_c[:,2], new_c[:,1], new_c[:,3], patch_size[1], patch_size[0])
 			# print("HERE: ", Fgray2.size(), Fgray1.size(), Fgray2_crop.size())
 
