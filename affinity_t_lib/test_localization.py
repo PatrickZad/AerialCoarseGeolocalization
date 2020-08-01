@@ -5,7 +5,6 @@ import queue
 import argparse
 import scipy.misc
 import numpy as np
-from tqdm import tqdm
 
 # Pytorch
 import torch
@@ -15,52 +14,31 @@ import torch.nn as nn
 from affinity_t_lib.libs.test_utils import *
 from affinity_t_lib.libs.model import transform
 from affinity_t_lib.libs.utils import norm_mask
-from affinity_t_lib.libs.model import Model_switchGTfixdot_swCC_Res as Model
+from affinity_t_lib.libs.model import track_match_comb as Model
 
 
 ############################## helper functions ##############################
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", type=int, default=1,
-                        help="batch size")
+
     parser.add_argument("-o", "--out_dir", type=str, default="results/",
                         help="output saving path")
-    parser.add_argument("--device", type=int, default=5,
-                        help="0~4 for single GPU, 5 for dataparallel.")
+
     parser.add_argument("-c", "--checkpoint_dir", type=str,
                         default="weights/checkpoint_latest.pth.tar",
                         help="checkpoints path")
-    parser.add_argument("-s", "--scale_size", type=int, nargs="+",
-                        help="scale size, a single number for shorter edge, or a pair for height and width")
-    parser.add_argument("--pre_num", type=int, default=7,
-                        help="preceding frame numbers")
-    parser.add_argument("--temp", type=float, default=1,
-                        help="softmax temperature")
-    parser.add_argument("--topk", type=int, default=5,
-                        help="accumulate label from top k neighbors")
-    parser.add_argument("-d", "--davis_dir", type=str,
-                        default="/workspace/DAVIS/",
-                        help="davis dataset path")
-
     args = parser.parse_args()
     args.is_train = False
-
-    args.multiGPU = args.device == torch.cuda.device_count() and args.device > 1
-    if not args.multiGPU:
-        torch.cuda.set_device(args.device)
-
     return args
 
 
 ############################## testing functions ##############################
 
 def forward(frame1, frame2, model):
-    """
-    propagate seg of frame1 to frame2
-    """
-    n, c, h, w = frame1.size()
-    frame1_gray = frame1[:, 0].view(n, 1, h, w)
-    frame2_gray = frame2[:, 0].view(n, 1, h, w)
+    n, c, h1, w1 = frame1.size()
+    n, c, h2, w2 = frame2.size()
+    frame1_gray = frame1[:, 0].view(n, 1, h1, w1)
+    frame2_gray = frame2[:, 0].view(n, 1, h2, w2)
     frame1_gray = frame1_gray.repeat(1, 3, 1, 1)
     frame2_gray = frame2_gray.repeat(1, 3, 1, 1)
 
@@ -69,70 +47,6 @@ def forward(frame1, frame2, model):
     bbox = output[2]
 
     return bbox.numpy()
-
-
-def test(model, frame_list, video_dir, first_seg, seg_ori):
-    """
-    test on a video given first frame & segmentation
-    """
-    video_dir = os.path.join(video_dir)
-    video_nm = video_dir.split('/')[-1]
-    video_folder = os.path.join(args.out_dir, video_nm)
-    os.makedirs(video_folder, exist_ok=True)
-
-    transforms = create_transforms()
-
-    # The queue stores args.pre_num preceding frames
-    que = queue.Queue(args.pre_num)
-
-    # first frame
-    frame1, ori_h, ori_w = read_frame(frame_list[0], transforms, args.scale_size)
-    n, c, h, w = frame1.size()
-
-    # saving first segmentation
-    out_path = os.path.join(video_folder, "00000.png")
-    imwrite_indexed(out_path, seg_ori)
-
-    for cnt in tqdm(range(1, len(frame_list))):
-        frame_tar, ori_h, ori_w = read_frame(frame_list[cnt], transforms, args.scale_size)
-
-        with torch.no_grad():
-            # frame 1 -> frame cnt
-            frame_tar_acc = forward(frame1, frame_tar, model, first_seg)
-
-            # frame cnt - i -> frame cnt, (i = 1, ..., pre_num)
-            tmp_queue = list(que.queue)
-            for pair in tmp_queue:
-                framei = pair[0]
-                segi = pair[1]
-                frame_tar_est_i = forward(framei, frame_tar, model, segi)
-                frame_tar_acc += frame_tar_est_i
-            frame_tar_avg = frame_tar_acc / (1 + len(tmp_queue))
-
-        frame_nm = frame_list[cnt].split('/')[-1].replace(".jpg", ".png")
-        out_path = os.path.join(video_folder, frame_nm)
-
-        # pop out oldest frame if neccessary
-        if (que.qsize() == args.pre_num):
-            que.get()
-        # push current results into queue
-        seg = copy.deepcopy(frame_tar_avg)
-        frame, ori_h, ori_w = read_frame(frame_list[cnt], transforms, args.scale_size)
-        que.put([frame, seg])
-
-        # upsampling & argmax
-        frame_tar_avg = torch.nn.functional.interpolate(frame_tar_avg, scale_factor=8, mode='bilinear')
-        frame_tar_avg = frame_tar_avg.squeeze()
-        frame_tar_avg = norm_mask(frame_tar_avg.squeeze())
-        _, frame_tar_seg = torch.max(frame_tar_avg, dim=0)
-
-        # saving to disk
-        frame_tar_seg = frame_tar_seg.squeeze().cpu().numpy()
-        frame_tar_seg = np.array(frame_tar_seg, dtype=np.uint8)
-        frame_tar_seg = scipy.misc.imresize(frame_tar_seg, (ori_h, ori_w), "nearest")
-
-        output_path = os.path.join(video_folder, frame_nm.split('.')[0] + '_seg.png')
-        imwrite_indexed(out_path, frame_tar_seg)
 
 
 ############################## main function ##############################
@@ -145,24 +59,32 @@ if (__name__ == '__main__'):
     args = parse_args()
 
     # loading pretrained model
-    model = Model(pretrainRes=False, temp=args.temp, uselayer=4)
+    model = Model(pretrained=False, )
+    model = torch.nn.DataParallel(model).cuda()
     checkpoint = torch.load(args.checkpoint_dir)
     best_loss = checkpoint['best_loss']
     model.load_state_dict(checkpoint['state_dict'])
+    model = model.module
     print("=> loaded checkpoint '{} ({})' (epoch {})"
           .format(args.checkpoint_dir, best_loss, checkpoint['epoch']))
     model.cuda()
     model.eval()
 
     # start testing
-    dataset = SenseflyTransVal()
+    scale_f = 0.6
+    dataset = SenseflyTransVal(scale_f=scale_f)
     loader = DataLoader(dataset, batch_size=1)
     dataset_dir = dataset.get_dataset_dir()
-    save_dir = args.o
+    save_dir = args.out_dir
     for env_dir, img_t, img_file, map_t, map_file in loader:
-        img_arr = cv2.imread(os.path.join(dataset_dir, env_dir, 'imgs', img_file))
-        map_arr = cv2.imread(os.path.join(dataset_dir, env_dir, 'map', map_file))
-        loc_box = forward(img_t, map_t, model)
+        img_t = img_t.cuda()
+        map_t = map_t.cuda()
+
+        img_arr = cv2.imread(os.path.join(dataset_dir, env_dir[0], 'imgs', img_file[0]))
+        img_arr = cv2.resize(img_arr, (0, 0), fx=scale_f, fy=scale_f)
+        map_arr = cv2.imread(os.path.join(dataset_dir, env_dir[0], 'map', map_file[0]))
+        map_arr = cv2.resize(map_arr, (0, 0), fx=scale_f, fy=scale_f)
+        loc_box = model(img_t, map_t, False, False, patch_size=[img_arr.shape[0] // 8, img_arr.shape[1] // 8])
         pts = np.array(
             [[loc_box[0], loc_box[1]], [loc_box[2], loc_box[1]], [loc_box[2], loc_box[3]], [loc_box[0], loc_box[3]]],
             np.int32)

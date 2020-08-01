@@ -10,9 +10,9 @@ from PIL import Image
 import torch
 
 # Customized libraries
-import libs.transforms_pair as transforms
+import affinity_t_lib.libs.transforms_pair as transforms
 
-color_palette = np.loadtxt('libs/data/palette.txt',dtype=np.uint8).reshape(-1,3)
+color_palette = np.loadtxt('affinity_t_lib/libs/data/palette.txt',dtype=np.uint8).reshape(-1,3)
 
 def transform_topk(aff, frame1, k, h2=None, w2=None):
 	"""

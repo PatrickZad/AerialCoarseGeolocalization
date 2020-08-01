@@ -377,7 +377,7 @@ class SenseflyTransTrain(Dataset):
             self._map_size / map_arr.shape[1] * map_arr.shape[0], self._map_size)
         map_arr = cv2.resize(map_arr, dsize=(int(target_size[0]), int(target_size[1])))
         background = np.zeros((self._map_size, self._map_size, 3))
-        background=background.astype(np.uint8)
+        background = background.astype(np.uint8)
         diff = self._map_size - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else self._map_size - \
                                                                                              map_arr.shape[1]
         offset = diff // 2
@@ -397,7 +397,7 @@ class SenseflyTransTrain(Dataset):
 
 
 class SenseflyTransVal(Dataset):
-    def __init__(self) -> None:
+    def __init__(self, scale_f=0.6) -> None:
         self._dataset_dir = os.path.join(
             dataset_common_dir, 'sensefly_trans', 'val')
         self._dirnames = os.listdir(self._dataset_dir)
@@ -409,11 +409,17 @@ class SenseflyTransVal(Dataset):
                 for map_file in maps:
                     pair_list.append((dirname, img, map_file))
         self._pair_list = pair_list
+        self._scale_f = scale_f
 
     def __getitem__(self, index: int):
         pair = self._pair_list[index]
         img_arr = cv2.imread(os.path.join(self._dataset_dir, pair[0], 'imgs', pair[1]))
+        img_arr = cv2.resize(img_arr, (0, 0), fx=self._scale_f, fy=self._scale_f)
+        img_arr = img_arr[: , (img_arr.shape[1] - img_arr.shape[0]) // 2:(img_arr.shape[1] - img_arr.shape[0]) // 2 +
+                    img_arr.shape[0], :].copy() if img_arr.shape[0] < img_arr.shape[1] else img_arr[(img_arr.shape[0] -
+                    img_arr.shape[1]) // 2:(img_arr.shape[0] - img_arr.shape[1]) // 2 + img_arr.shape[1],:, :].copy()
         map_arr = cv2.imread(os.path.join(self._dataset_dir, pair[0], 'map', pair[2]))
+        map_arr = cv2.resize(map_arr, (0, 0), fx=self._scale_f, fy=self._scale_f)
         img_arr = cv2.cvtColor(img_arr, cv2.COLOR_BGR2LAB)
         img_t = torch.from_numpy(img_arr.transpose(2, 0, 1).copy()).contiguous().float()
         for t, m, s in zip(img_t, [128, 128, 128], [128, 128, 128]):
@@ -424,10 +430,11 @@ class SenseflyTransVal(Dataset):
         for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
 
-        return pair[0], img_t, pair[1], map_t,pair[2]
+        return pair[0], img_t, pair[1], map_t, pair[2]
 
     def __len__(self) -> int:
         return len(self._pair_list)
+
     def get_dataset_dir(self):
         return self._dataset_dir
 

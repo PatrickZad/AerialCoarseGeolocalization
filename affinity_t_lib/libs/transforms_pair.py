@@ -3,7 +3,8 @@ import random
 import scipy.io
 import cv2
 import numpy as np
-from PIL import Image, ImageOps, ImageEnhance, PILLOW_VERSION
+import collections
+#from PIL import Image, ImageOps, ImageEnhance, PILLOW_VERSION
 try:
 	import accimage
 except ImportError:
