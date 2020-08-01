@@ -11,6 +11,7 @@ import torch.nn as nn
 from affinity_t_lib.libs.test_utils import *
 from affinity_t_lib.libs.model import transform
 from affinity_t_lib.libs.utils import norm_mask
+
 from .model import track_match_comb as Model
 
 
@@ -46,6 +47,9 @@ def parse_args():
     return args
 
 
+############################## main function ##############################
+
+
 if (__name__ == '__main__'):
     from data.dataset import SenseflyTransVal
     from torch.utils.data import DataLoader
@@ -65,15 +69,20 @@ if (__name__ == '__main__'):
     model.eval()
 
     # start testing
-    dataset = SenseflyTransVal()
+    scale_f = 0.6
+    dataset = SenseflyTransVal(scale_f=scale_f)
     loader = DataLoader(dataset, batch_size=1)
     dataset_dir = dataset.get_dataset_dir()
-    save_dir = args.savedir
+    save_dir = args.out_dir
     for env_dir, img_t, img_file, map_t, map_file in loader:
-        img_arr = cv2.imread(os.path.join(dataset_dir, env_dir, 'imgs', img_file))
-        map_arr = cv2.imread(os.path.join(dataset_dir, env_dir, 'map', map_file))
-        out = model(img_t, map_t, False, patch_size=[args.patch_size // 8, args.patch_size // 8])
-        loc_box = out[2]
+        img_t = img_t.cuda()
+        map_t = map_t.cuda()
+
+        img_arr = cv2.imread(os.path.join(dataset_dir, env_dir[0], 'imgs', img_file[0]))
+        img_arr = cv2.resize(img_arr, (0, 0), fx=scale_f, fy=scale_f)
+        map_arr = cv2.imread(os.path.join(dataset_dir, env_dir[0], 'map', map_file[0]))
+        map_arr = cv2.resize(map_arr, (0, 0), fx=scale_f, fy=scale_f)
+        loc_box = model(img_t, map_t, False, False, patch_size=[img_arr.shape[0] // 8, img_arr.shape[1] // 8])
         pts = np.array(
             [[loc_box[0], loc_box[1]], [loc_box[2], loc_box[1]], [loc_box[2], loc_box[3]], [loc_box[0], loc_box[3]]],
             np.int32)
