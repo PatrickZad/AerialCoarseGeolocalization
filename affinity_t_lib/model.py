@@ -1,11 +1,11 @@
 import copy
 import torch
 import torch.nn as nn
-from libs.net_utils import NLM, NLM_dot, NLM_woSoft
+from affinity_t_lib.libs.net_utils import NLM, NLM_dot, NLM_woSoft
 from torchvision.models import resnet18
-from libs.autoencoder import encoder3, decoder3, encoder_res18, encoder_res50
+from affinity_t_lib.libs.autoencoder import encoder3, decoder3, encoder_res18, encoder_res50
 
-from libs.utils import *
+from affinity_t_lib.libs.utils import *
 
 def transform(aff, frame1):
 	"""
@@ -184,7 +184,7 @@ class track_match_comb(nn.Module):
 			if self.coord_switch:
 				aff_norm_tran = self.softmax(aff_p.permute(0,2,1)*self.temp)
 				if self.grid_flat_crop is None:
-					self.grid_flat_crop = create_flat_grid(Fp_tar.size()).permute(0,2,1).detach()
+					self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0,2,1).detach()
 				C12 = torch.bmm(self.grid_flat_crop, aff_norm)
 				C11 = torch.bmm(C12, aff_norm_tran)
 				output.append(self.grid_flat_crop)

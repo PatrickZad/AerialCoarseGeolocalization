@@ -125,7 +125,7 @@ class ConcentrationSwitchLoss(nn.Module):
 	def forward(self, aff):
 		# aff here is not processed by softmax
 		b, c, h, w = self.F_size
-		if aff.dim() == 4:
+		if aff.dim() == 4:# TODO may remove 2 dims when batch_size is 2
 			aff = torch.squeeze(aff)
 		# b * 2 * h * w
 		coord1 = aff2coord(self.F_size, self.grid, aff, self.temp, softmax=self.softmax)
