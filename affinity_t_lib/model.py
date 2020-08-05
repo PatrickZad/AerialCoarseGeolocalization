@@ -119,6 +119,7 @@ def diff_crop_by_assembled_grid(feature_map, lt, rb):
 
 
 class track_match_comb(nn.Module):
+
     def __init__(self, pretrained, encoder_dir=None, decoder_dir=None, temp=1, Resnet="r18", color_switch=True,
                  coord_switch=True):
         super(track_match_comb, self).__init__()
@@ -209,16 +210,13 @@ class track_match_comb(nn.Module):
             right_bottom=torch.where(right_bottom>upper_bd,upper_bd,right_bottom)
 
             # use reimplemented diff_crop to extract sub-affinity-matrix
-
+            Fgray2_crop = diff_crop_by_assembled_grid(Fgray2, left_top, right_bottom)
             '''Fgray2_crop = diff_crop(Fgray2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3], patch_size[1],
                                     patch_size[0])
             # print("HERE: ", Fgray2.size(), Fgray1.size(), Fgray2_crop.size())
-
+            '''
             aff_p = self.nlm(Fgray1, Fgray2_crop)
-            aff_norm = self.softmax(aff_p * self.temp)'''
-            aff_p=diff_crop_by_assembled_grid(aff_ref_tar_o,left_top,right_bottom)
-            aff_norm=self.softmax(aff_p*self.temp)
-
+            aff_norm = self.softmax(aff_p * self.temp)
             Fcolor2_est = transform(aff_norm, Fcolor1)
             color2_est = self.decoder(Fcolor2_est)
 
@@ -244,8 +242,9 @@ class track_match_comb(nn.Module):
             # coord orthorganal
             if self.coord_switch:
                 aff_norm_tran = self.softmax(aff_p.permute(0, 2, 1) * self.temp)
-                if self.grid_flat_crop is None:
-                    self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0, 2, 1).detach()
+                self.grid_flat_crop=create_flat_grid()
+                '''if self.grid_flat_crop is None:
+                    self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0, 2, 1).detach()'''
                 C12 = torch.bmm(self.grid_flat_crop, aff_norm)
                 C11 = torch.bmm(C12, aff_norm_tran)
                 output.append(self.grid_flat_crop)
