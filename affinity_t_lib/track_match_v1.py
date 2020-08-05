@@ -35,18 +35,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description='')
 
     # file/folder pathes
-    parser.add_argument("--videoRoot", type=str,
-                        default="/Data2/Kinetices/compress/train_256/", help='train video path')
-    parser.add_argument("--videoList", type=str, default="/Data2/Kinetices/compress/train.txt",
-                        help='train video list (after "train_256")')
     parser.add_argument("--encoder_dir", type=str,
                         default='affinity_t_lib/weights/encoder_single_gpu.pth', help="pretrained encoder")
     parser.add_argument("--decoder_dir", type=str,
                         default='affinity_t_lib/weights/decoder_single_gpu.pth', help="pretrained decoder")
-    parser.add_argument('--resume', type=str, default='', metavar='PATH',
+    parser.add_argument('--resume', type=str, default='affinity_t_lib/weights/checkpoint_latest.pth.tar', metavar='PATH',
                         help='path to latest checkpoint (default: none)')
     parser.add_argument("-c", "--savedir", type=str,
-                        default="affinity_t_lib/match_track_comb/", help='checkpoints path')
+                        default="experiments/localization/affinity_trainable", help='checkpoints path')
     parser.add_argument("--Resnet", type=str, default="r18",
                         help="choose from r18 or r50")
 
@@ -54,14 +50,11 @@ def parse_args():
     parser.add_argument("--pretrainRes", action="store_true")
     parser.add_argument("--batchsize", type=int, default=1, help="batchsize")
     parser.add_argument('--workers', type=int, default=16)
-    parser.add_argument("--patch_size", type=int, default=256,
+    parser.add_argument("--patch_size", type=int, default=768,
                         help="crop size for localization.")
-    parser.add_argument("--full_size", type=int, default=640,
+    parser.add_argument("--full_size", type=int, default=768,
                         help="full size for one frame.")
-    parser.add_argument("--rotate", type=int, default=10,
-                        help='degree to rotate training images')
-    parser.add_argument("--scale", type=float,
-                        default=1.2, help='random scale')
+
     parser.add_argument("--lr", type=float, default=0.0001,
                         help='learning rate')
     parser.add_argument('--lr-mode', type=str, default='poly')
