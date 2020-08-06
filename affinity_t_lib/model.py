@@ -8,7 +8,7 @@ from affinity_t_lib.libs.autoencoder import encoder3, decoder3, encoder_res18, e
 from affinity_t_lib.libs.utils import *
 
 
-def transform(aff, frame1):
+def transform(aff, frame1, target_h=None, target_w=None):
     """
     Given aff, copy from frame1 to construct frame2.
     INPUTS:
@@ -16,9 +16,13 @@ def transform(aff, frame1):
      - frame1: n*c*h*w feature map
     """
     b, c, h, w = frame1.size()
+    if target_h is None:
+        target_h = h
+    if target_w is None:
+        target_w = w
     frame1 = frame1.view(b, c, -1)
     frame2 = torch.bmm(frame1, aff)
-    return frame2.view(b, c, h, w)
+    return frame2.view(b, c, target_h, target_w)
 
 
 class normalize(nn.Module):
@@ -111,10 +115,10 @@ def diff_crop_by_assembled_grid(feature_map, lt, rb):
     lt_thred = f_grid[f_grid >= lt_volume]  # b*lth*ltw*2
     tb, th, tw, td = lt_thred.size()
     rb_volume = rb.reshape((-1, 1, 1, 2)).repeat((1, th, tw, 1))
-    ltrb_thred = lt_thred[lt_thred <= rb_volume]#b*ch*cw*2
-    scale_t=torch.tensor([fw,fh]).reshape((1,1,1,-1)).cuda()
-    samp_grid=ltrb_thred/scale_t-scale_t/2
-    crop=torch.nn.functional.grid_sample(feature_map,samp_grid)
+    ltrb_thred = lt_thred[lt_thred <= rb_volume]  # b*ch*cw*2
+    scale_t = torch.tensor([fw, fh]).reshape((1, 1, 1, -1)).cuda()
+    samp_grid = ltrb_thred / scale_t - scale_t / 2
+    crop = torch.nn.functional.grid_sample(feature_map, samp_grid)
     return crop
 
 
@@ -201,13 +205,13 @@ class track_match_comb(nn.Module):
             limit_h, limit_w = Fgray2.size(2), Fgray2.size(3)
             expand = (coords - center.view(- 1, 1, 2)).abs().mean(dim=1)  # b*2
             left_top = center - expand  # b*2
-            right_bottom=center + expand
+            right_bottom = center + expand
             lower_bd = torch.zeros_like(left_top)
-            left_top= torch.where(left_top < lower_bd, lower_bd, left_top)
-            right_bottom=torch.where(right_bottom<lower_bd,lower_bd,right_bottom)
-            upper_bd = lower_bd+torch.tensor([[limit_w-1,limit_h-1]]).cuda()
+            left_top = torch.where(left_top < lower_bd, lower_bd, left_top)
+            right_bottom = torch.where(right_bottom < lower_bd, lower_bd, right_bottom)
+            upper_bd = lower_bd + torch.tensor([[limit_w - 1, limit_h - 1]]).cuda()
             left_top = torch.where(left_top > upper_bd, upper_bd, left_top)
-            right_bottom=torch.where(right_bottom>upper_bd,upper_bd,right_bottom)
+            right_bottom = torch.where(right_bottom > upper_bd, upper_bd, right_bottom)
 
             # use reimplemented diff_crop to extract sub-affinity-matrix
             Fgray2_crop = diff_crop_by_assembled_grid(Fgray2, left_top, right_bottom)
@@ -217,32 +221,32 @@ class track_match_comb(nn.Module):
             '''
             aff_p = self.nlm(Fgray1, Fgray2_crop)
             aff_norm = self.softmax(aff_p * self.temp)
-            Fcolor2_est = transform(aff_norm, Fcolor1)
+            Fcolor2_est = transform(aff_norm, Fcolor1, Fgray2_crop.size(-2), Fgray2_crop.size(-1))
             color2_est = self.decoder(Fcolor2_est)
 
             Fcolor2_full = self.rgb_encoder(img_tar)
             '''Fcolor2_crop = diff_crop(Fcolor2_full, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3], patch_size[1],
                                      patch_size[0])'''
-            Fcolor2_crop=diff_crop_by_assembled_grid(Fcolor2_full,left_top,right_bottom)
+            Fcolor2_crop = diff_crop_by_assembled_grid(Fcolor2_full, left_top, right_bottom)
 
             output.append(color2_est)
             output.append(aff_p)
-            #output.append(new_c * 8)
+            # output.append(new_c * 8)
 
-            output.append(torch.cat([left_top,right_bottom],dim=-1))
+            output.append(torch.cat([left_top, right_bottom], dim=-1))
 
             output.append(coords)
 
             # color orthorganal
             if self.color_switch:
-                Fcolor1_est = transform(aff_norm.transpose(1, 2), Fcolor2_crop)
+                Fcolor1_est = transform(self.softmax(aff_p.transpose(1, 2)), Fcolor2_crop)
                 color1_est = self.decoder(Fcolor1_est)
                 output.append(color1_est)
 
             # coord orthorganal
             if self.coord_switch:
                 aff_norm_tran = self.softmax(aff_p.permute(0, 2, 1) * self.temp)
-                self.grid_flat_crop=create_flat_grid()
+                self.grid_flat_crop = create_flat_grid(Fgray1.size())  # the actual C11
                 '''if self.grid_flat_crop is None:
                     self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0, 2, 1).detach()'''
                 C12 = torch.bmm(self.grid_flat_crop, aff_norm)
