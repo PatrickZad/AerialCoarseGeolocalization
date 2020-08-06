@@ -286,7 +286,8 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             color2_est = output[0]
             aff = output[1]
             new_c = output[2]
-            coords = output[3]
+            #coords = output[3]
+            f1_grid,fcrop_grid=output[3]
             #Fcolor2_crop = output[-1]
             color2_crop=output[-1]
 
@@ -294,14 +295,14 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             color1_est = None
             count = 3
 
-            constraint_loss = torch.sum(closs(aff.view(b, 1, p_n1, p_n2))) * args.lc
+            constraint_loss = torch.sum(closs(aff.view(b, 1, p_n1, p_n2),f1_grid,fcrop_grid)) * args.lc
             c_losses.update(constraint_loss.item(), frame1_var.size(0))
 
             if args.color_switch_flag:
                 count += 1
                 color1_est = output[count]
 
-            loss_color = L1_loss(color2_est, Fcolor2_crop, 10, 10,
+            loss_color = L1_loss(color2_est, color2_crop, 10, 10,
                                  thr=thr, pred1=color1_est, frame1_var=frame1_var)
             loss_ = loss_color + constraint_loss
 
@@ -316,7 +317,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
                 loss = loss_
 
             if (i % args.log_interval == 0):
-                save_vis(color2_est, Fcolor2_crop, frame1_var,
+                save_vis(color2_est, color2_crop, frame1_var,
                          frame2_var, args.savepatch, new_c)
 
         losses.update(loss.item(), frame1_var.size(0))

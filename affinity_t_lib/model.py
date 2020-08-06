@@ -207,9 +207,9 @@ class track_match_comb(nn.Module):
             output.append(aff_p)
             # output.append(new_c * 8)
 
-            output.append(torch.cat([left_top, right_bottom], dim=-1)*8)
+            output.append(torch.cat([left_top, right_bottom], dim=-1) * 8)
 
-            output.append(create_grid(Fgray2_crop))#output.append(coords)
+            output.append((create_grid(Fgray1), create_grid(Fgray2_crop)))  # output.append(coords)
 
             # color orthorganal
             if self.color_switch:
