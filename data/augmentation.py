@@ -61,7 +61,7 @@ def rand_crop(img, crop_size):
     return img[h_offset:h_offset + ch, w_offset:w_offset + cw, :].copy()
 
 
-def rand_erase(img, probability=0.5, sl=0.02, sh=0.4, r1=0.3, mean=(0.4914, 0.4822, 0.4465)):
+def rand_erase(img, probability=0.5, sl=0.02, sh=0.1, r1=0.3, mean=(0.4914, 0.4822, 0.4465)):
     if random.uniform(0, 1) >= probability:
         return img
     ih, iw = img.shape[:2]
@@ -77,8 +77,8 @@ def rand_erase(img, probability=0.5, sl=0.02, sh=0.4, r1=0.3, mean=(0.4914, 0.48
         if w < iw and h < ih:
             x1 = random.randint(0, ih - h)
             y1 = random.randint(0, iw - w)
-            img[x1:x1 + h, y1:y1 + w, 0] = mean[0]
-            img[x1:x1 + h, y1:y1 + w, 1] = mean[1]
-            img[x1:x1 + h, y1:y1 + w, 2] = mean[2]
+            img[x1:x1 + h, y1:y1 + w, 0] = mean[0]*128
+            img[x1:x1 + h, y1:y1 + w, 1] = mean[1]*128
+            img[x1:x1 + h, y1:y1 + w, 2] = mean[2]*128
         return img
     return img

@@ -128,7 +128,31 @@ def norm_mask(mask):
             mask_cnt = mask_cnt / mask_cnt.max()
             mask[cnt, :, :] = mask_cnt
     return mask
+def create_grid(F_size, GPU=True):
+    # implemented by patrick
+    b, c, h, w = F_size
+    grid_x = torch.arange(start=0, end=w).reshape(1, 1, -1, 1)
+    grid_x = grid_x.repeat(b, h, 1, 1)
+    grid_y = torch.arange(start=0, end=h).reshape(1, -1, 1, 1)
+    grid_y = grid_y.repeat(b, 1, w, 1)
+    grid = torch.cat([grid_x, grid_y], dim=-1)
+    if GPU:
+        grid = grid.cuda()
+    return grid
 
+def diff_crop_by_assembled_grid(feature_map, lt, rb):
+    # implemented by patrick
+    b, c, fh, fw = feature_map.size()
+    f_grid = create_grid(feature_map.size(), True)  # b*fh*fw*2
+    lt_volume = lt.reshape((-1, 1, 1, 2)).repeat((1, fh, fw, 1))
+    lt_thred = f_grid[f_grid >= lt_volume]  # b*lth*ltw*2
+    tb, th, tw, td = lt_thred.size()
+    rb_volume = rb.reshape((-1, 1, 1, 2)).repeat((1, th, tw, 1))
+    ltrb_thred = lt_thred[lt_thred <= rb_volume]  # b*ch*cw*2
+    scale_t = torch.tensor([fw, fh]).reshape((1, 1, 1, -1)).cuda()
+    samp_grid = ltrb_thred / scale_t - scale_t / 2
+    crop = torch.nn.functional.grid_sample(feature_map, samp_grid)
+    return crop
 
 def diff_crop(F, x1, y1, x2, y2, ph, pw):
     """

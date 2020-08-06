@@ -18,7 +18,7 @@ from affinity_t_lib.model import track_match_comb as Model
 from affinity_t_lib.libs.loss import L1_loss
 from affinity_t_lib.libs.concentration_loss import ConcentrationSwitchLoss as ConcentrationLoss
 from affinity_t_lib.libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current
-from affinity_t_lib.libs.utils import diff_crop
+from affinity_t_lib.libs.utils import diff_crop, diff_crop_by_assembled_grid
 
 from data.dataset import SenseflyTransTrain, SenseflyTransVal
 
@@ -39,7 +39,8 @@ def parse_args():
                         default='affinity_t_lib/weights/encoder_single_gpu.pth', help="pretrained encoder")
     parser.add_argument("--decoder_dir", type=str,
                         default='affinity_t_lib/weights/decoder_single_gpu.pth', help="pretrained decoder")
-    parser.add_argument('--resume', type=str, default='affinity_t_lib/weights/checkpoint_latest.pth.tar', metavar='PATH',
+    parser.add_argument('--resume', type=str, default='affinity_t_lib/weights/checkpoint_latest.pth.tar',
+                        metavar='PATH',
                         help='path to latest checkpoint (default: none)')
     parser.add_argument("-c", "--savedir", type=str,
                         default="experiments/localization/affinity_trainable", help='checkpoints path')
@@ -232,8 +233,9 @@ def forward(frame1, frame2, model, warm_up, patch_size=None):
         new_c = output[2]
         # gt patch
         # print("HERE2: ", frame2.size(), new_c, patch_size)
-        color2_gt = diff_crop(frame2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3],
-                              patch_size, patch_size)
+        '''color2_gt = diff_crop(frame2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3],
+                              patch_size, patch_size)'''
+        color2_gt = diff_crop_by_assembled_grid(frame2, new_c[:, :2], new_c[:, 2:])
         output.append(color2_gt)
     return output
 
@@ -285,13 +287,14 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             aff = output[1]
             new_c = output[2]
             coords = output[3]
-            Fcolor2_crop = output[-1]
+            #Fcolor2_crop = output[-1]
+            color2_crop=output[-1]
 
-            b, x, x = aff.size()
+            b, p_n1, p_n2 = aff.size()
             color1_est = None
             count = 3
 
-            constraint_loss = torch.sum(closs(aff.view(b, 1, x, x))) * args.lc
+            constraint_loss = torch.sum(closs(aff.view(b, 1, p_n1, p_n2))) * args.lc
             c_losses.update(constraint_loss.item(), frame1_var.size(0))
 
             if args.color_switch_flag:

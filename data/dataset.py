@@ -376,7 +376,7 @@ class SenseflyTransTrain(Dataset):
                                                                                                 map_arr.shape[1] else (
             self._map_size / map_arr.shape[1] * map_arr.shape[0], self._map_size)
         map_arr = cv2.resize(map_arr, dsize=(int(target_size[0]), int(target_size[1])))
-        background = np.zeros((self._map_size, self._map_size, 3))
+        '''background = np.zeros((self._map_size, self._map_size, 3))
         background = background.astype(np.uint8)
         diff = self._map_size - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else self._map_size - \
                                                                                              map_arr.shape[1]
@@ -384,8 +384,8 @@ class SenseflyTransTrain(Dataset):
         if map_arr.shape[0] < map_arr.shape[1]:
             background[offset:offset + map_arr.shape[0], :map_arr.shape[1], :] = map_arr
         else:
-            background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr
-        map_arr = cv2.cvtColor(background, cv2.COLOR_BGR2LAB)
+            background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr'''
+        map_arr = cv2.cvtColor(map_arr, cv2.COLOR_BGR2LAB)
         map_t = torch.from_numpy(map_arr.transpose(2, 0, 1).copy()).contiguous().float()
         for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
