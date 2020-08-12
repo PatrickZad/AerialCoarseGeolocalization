@@ -20,7 +20,7 @@ from affinity_t_lib.libs.concentration_loss import ConcentrationSwitchLoss as Co
 from affinity_t_lib.libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current
 from affinity_t_lib.libs.utils import diff_crop, diff_crop_by_assembled_grid
 
-from data.dataset import SenseflyTransTrain, SenseflyTransVal
+from data.dataset import SenseflyTransTrain, SenseflyTransVal,getVHRRemoteDataRandomCropper
 
 FORMAT = "[%(asctime)-15s %(filename)s:%(lineno)d %(funcName)s] %(message)s"
 logging.basicConfig(format=FORMAT)
@@ -150,8 +150,10 @@ def create_loader(args):
     dataset_train = VidListv2(args.videoRoot, args.videoList, args.patch_size,
                               args.window_len, args.rotate, args.scale, args.full_size)
     '''
-    dataset_train_warm = SenseflyTransTrain(crop_size=args.patch_size)
-    dataset_train = SenseflyTransTrain(crop_size=args.patch_size)
+    #dataset_train_warm = SenseflyTransTrain(crop_size=args.patch_size)
+    #dataset_train = SenseflyTransTrain(crop_size=args.patch_size)
+    dataset_train,dataset_val=getVHRRemoteDataRandomCropper()
+    dataset_train_warm=dataset_train
     if args.multiGPU:
         train_loader_warm = torch.utils.data.DataLoader(
             dataset_train_warm, batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True,

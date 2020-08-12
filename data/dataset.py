@@ -171,7 +171,7 @@ class RemoteDataReader:
 aug_methods = ['scale', 'rotate', 'tilt', 'erase']
 
 
-class VHRRemoteDataIter:
+class VHRRemoteDataReader:
     def __init__(self, dir, files, aug_options):
         self._dir = dir
         self._files = files
@@ -241,6 +241,40 @@ class VHRRemoteDataIter:
             t_mat = np.concatenate([t_mat, np.array([[0, 0, 1]])], axis=0)
             affine_mat = np.matmul(t_mat, affine_mat)
         return img_arr, affine_mat, content_corners
+
+    def __len__(self):
+        return self._lenth
+
+    def read_item(self, idx, map_size=1024, scale=0.4):
+        origin_img = cv.imread(os.path.join(
+            self._dir, self._files[idx]))
+        origin_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
+        oh, ow = origin_img.shape[:2]
+        map_size = (map_size, map_size / ow * oh) if ow > oh else (map_size / oh * ow, map_size)
+        map_arr = cv.resize(origin_img, (int(map_size[0]), int(map_size[1])))
+        h, w = map_arr.shape[:2]
+        if w > h:
+            short_l = map_arr.shape[0]
+            new_l = (short_l // 8 + 1) * 8
+            map_size = (w, new_l)
+        else:
+            short_l = map_arr.shape[1]
+            new_l = (short_l // 8 + 1) * 8
+            map_size = (new_l, h)
+        background = np.zeros((map_size[1], map_size[0], 3))
+        background = background.astype(np.uint8)
+        diff = map_size[1] - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else map_size[0] - \
+                                                                                          map_arr.shape[1]
+        offset = diff // 2
+        if map_arr.shape[0] < map_arr.shape[1]:
+            background[offset:offset + map_arr.shape[0], :map_arr.shape[1], :] = map_arr
+        else:
+            background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr
+        crop_size = (min(h, w) * scale // 8 + 1) * 8
+        offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
+        offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
+        crop = origin_img[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
+        return crop, background
 
     def __next__(self):
         if self._next == self._lenth:
@@ -321,6 +355,26 @@ class VHRRemoteDataIter:
         return origin_img, crop, (x, y, w, h)
 
 
+class VHRRemoteDataset(Dataset):
+    def __init__(self, data_reader: VHRRemoteDataReader):
+        self._data_reader = data_reader
+
+    def __len__(self):
+        return self._data_reader.__len__()
+
+    def __getitem__(self, item):
+        crop, map_arr = self._data_reader.read_item(item)
+        crop = cv.cvtColor(crop, cv.COLOR_RGB2LAB)
+        map_arr = cv.cvtColor(map_arr, cv.COLOR_RGB2LAB)
+        map_t = torch.from_numpy(map_arr.transpose(2, 0, 1).copy()).contiguous().float()
+        for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
+            t.sub_(m).div_(s)
+        crop_t = torch.from_numpy(crop.transpose(2, 0, 1).copy()).contiguous().float()
+        for t, m, s in zip(crop_t, [128, 128, 128], [128, 128, 128]):
+            t.sub_(m).div_(s)
+        return crop_t, map_t
+
+
 def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
     dir = os.path.join(dataset_common_dir, 'VHR Remote Sensing')
     dir_files = os.listdir(dir)
@@ -329,7 +383,9 @@ def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
     len1 = int(length * proportion)
     part1 = dir_files[:len1]
     part2 = dir_files[len1:]
-    return VHRRemoteDataIter(dir, part1, aug), VHRRemoteDataIter(dir, part2, aug)
+    train = VHRRemoteDataReader(dir, part1, aug)
+    val = VHRRemoteDataReader(dir, part2, aug)
+    return VHRRemoteDataset(train), VHRRemoteDataset(val)
 
 
 class SenseflyTransTrain(Dataset):
