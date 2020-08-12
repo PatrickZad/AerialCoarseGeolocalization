@@ -21,7 +21,12 @@ def transform(aff, frame1, target_h=None, target_w=None):
     if target_w is None:
         target_w = w
     frame1 = frame1.view(b, c, -1)
-    frame2 = torch.bmm(frame1, aff)
+    try:
+        frame2 = torch.bmm(frame1, aff)
+    except Exception as e:
+        print(e)
+        print(frame1.size())
+        print(aff.size())
     return frame2.view(b, c, target_h, target_w)
 
 
@@ -126,7 +131,7 @@ class track_match_comb(nn.Module):
         self.color_switch = color_switch
         self.coord_switch = coord_switch
 
-    def forward(self, img_ref, img_tar, warm_up=True, patch_size=None):
+    def forward(self, img_ref, img_tar, warm_up=True, patch_size=None,nc_only=False):
         n, c, h_ref, w_ref = img_ref.size()
         n, c, h_tar, w_tar = img_tar.size()
         gray_ref = copy.deepcopy(img_ref[:, 0].view(n, 1, h_ref, w_ref).repeat(1, 3, 1, 1))
@@ -178,14 +183,17 @@ class track_match_comb(nn.Module):
             # scale estimation implemented by patrick
             limit_h, limit_w = Fgray2.size(2), Fgray2.size(3)
             expand = (coords - center.view(- 1, 1, 2)).abs().mean(dim=1)  # b*2
-            left_top = center - expand  # b*2
-            right_bottom = center + expand
+            left_top = (center - expand).floor()  # b*2
+            right_bottom = (center + expand).ceil()
             lower_bd = torch.zeros_like(left_top)
             left_top = torch.where(left_top < lower_bd, lower_bd, left_top)
             right_bottom = torch.where(right_bottom < lower_bd, lower_bd, right_bottom)
             upper_bd = lower_bd + torch.tensor([[limit_w - 1, limit_h - 1]]).cuda()
             left_top = torch.where(left_top > upper_bd, upper_bd, left_top)
             right_bottom = torch.where(right_bottom > upper_bd, upper_bd, right_bottom)
+
+            if nc_only:
+                return torch.cat([left_top, right_bottom + 1], dim=-1).squeeze()*8
 
             # use reimplemented diff_crop to extract sub-affinity-matrix
             Fgray2_crop = diff_crop_by_assembled_grid(Fgray2, left_top, right_bottom)
@@ -207,13 +215,14 @@ class track_match_comb(nn.Module):
             output.append(aff_p)
             # output.append(new_c * 8)
 
-            output.append(torch.cat([left_top, right_bottom], dim=-1) * 8)
+            output.append(torch.cat([left_top, right_bottom + 1], dim=-1) * 8)
 
-            output.append((create_grid(Fgray1), create_grid(Fgray2_crop)))  # output.append(coords)
+            output.append((create_grid(Fgray1.size()), create_grid(Fgray2_crop.size())))  # output.append(coords)
 
             # color orthorganal
             if self.color_switch:
-                Fcolor1_est = transform(self.softmax(aff_p.transpose(1, 2)), Fcolor2_crop)
+                Fcolor1_est = transform(self.softmax(aff_p.transpose(1, 2)), Fcolor2_crop, Fgray1.size(-2),
+                                        Fgray1.size(-1))
                 color1_est = self.decoder(Fcolor1_est)
                 output.append(color1_est)
 
@@ -223,10 +232,10 @@ class track_match_comb(nn.Module):
                 self.grid_flat_crop = create_flat_grid(Fgray1.size())  # the actual C11
                 '''if self.grid_flat_crop is None:
                     self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0, 2, 1).detach()'''
-                C12 = torch.bmm(self.grid_flat_crop, aff_norm)
+                C12 = torch.bmm(self.grid_flat_crop.permute(0, 2, 1), aff_norm)
                 C11 = torch.bmm(C12, aff_norm_tran)
                 output.append(self.grid_flat_crop)
-                output.append(C11)
+                output.append(C11.permute(0, 2, 1))
 
         return output
 

@@ -144,16 +144,19 @@ class ConcentrationSwitchLoss(nn.Module):
     def forward(self, aff, f1_grid=None, f2_grid=None):
         # aff here is not processed by softmax
         b, c, h, w = self.F_size
-        if aff.dim() == 4:  # TODO may remove 2 dims when batch_size is 2
-            aff = torch.squeeze(aff)
         # b * 2 * h * w
         '''coord1 = aff2coord(self.F_size, self.grid, aff, self.temp, softmax=self.softmax)
         coord2 = aff2coord(self.F_size, self.grid, aff.permute(0, 2, 1), self.temp, softmax=self.softmax)'''
         coord2 = self.aff2coord(aff, f1_grid, f2_grid.size(1), f2_grid.size(2))  # estimation of 2 in 1
         coord1 = self.aff2coord(aff.permute(0, 2, 1), f2_grid, f1_grid.size(1), f1_grid.size(2))  # estimation of 1 in 2
         # b * 2 * (h * w) * (win ^ 2)
+        c2b, c2d, c2h, c2w = coord2.size()
+        if min(c2h, c2w) < self.win_len:
+            coord2_unfold = coord2.view((c2b, c2d, -1, 1))
+        else:
+            coord2_unfold = im2col(coord2, self.win_len, stride=self.stride)
         coord1_unfold = im2col(coord1, self.win_len, stride=self.stride)
-        coord2_unfold = im2col(coord2, self.win_len, stride=self.stride)
+
         # b * 2 * (h * w) * 1
         center1 = torch.mean(coord1_unfold, dim=3)  # center of every local block
         center1 = center1.view(b, 2, -1, 1)
@@ -164,7 +167,8 @@ class ConcentrationSwitchLoss(nn.Module):
         center2 = center2.view(b, 2, -1, 1)
         # b * 2 * (h * w) * (win ^ 2)
         dis2center2 = (coord2_unfold - center2) ** 2
-        return (torch.sum(dis2center1) + torch.sum(dis2center2)) / dis2center1.numel()
+        # return (torch.sum(dis2center1) + torch.sum(dis2center2)) / dis2center1.numel()
+        return torch.mean(dis2center1) + torch.mean(dis2center2)
 
 
 if __name__ == '__main__':

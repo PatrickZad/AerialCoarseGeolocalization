@@ -4,7 +4,7 @@ import torch
 import shutil
 # import visdom
 import numpy as np
-from libs.vis_utils import draw_certainty_map, flow_to_rgb, prepare_img
+from affinity_t_lib.libs.vis_utils import draw_certainty_map, flow_to_rgb, prepare_img
 from os.path import join
 
 

@@ -67,14 +67,14 @@ def parse_args():
     parser.add_argument("--momentum", type=float, default=0.9, help='momentum')
     parser.add_argument("--weight_decay", type=float,
                         default=0.005, help='weight decay')
-    parser.add_argument("--device", type=int, default=4,
+    parser.add_argument("--device", type=int, default=0,
                         help="0~device_count-1 for single GPU, device_count for dataparallel.")
     parser.add_argument("--temp", type=int, default=1,
                         help="temprature for softmax.")
 
     # set epoches
     parser.add_argument("--wepoch", type=int, default=10, help='warmup epoch')
-    parser.add_argument("--nepoch", type=int, default=20, help='max epoch')
+    parser.add_argument("--nepoch", type=int, default=128, help='max epoch')
 
     # concenration regularization
     parser.add_argument("--lc", type=float, default=1e4,
@@ -90,13 +90,11 @@ def parse_args():
 
     print("Begin parser arguments.")
     args = parser.parse_args()
-    assert args.videoRoot is not None
-    assert args.videoList is not None
     if not os.path.exists(args.savedir):
         os.mkdir(args.savedir)
     args.savepatch = os.path.join(args.savedir, 'savepatch')
     args.logfile = open(os.path.join(args.savedir, "logargs.txt"), "w")
-    args.multiGPU = args.device == torch.cuda.device_count()
+    args.multiGPU = False  # args.device == torch.cuda.device_count()
 
     if not args.multiGPU:
         torch.cuda.set_device(args.device)
@@ -177,24 +175,13 @@ def train(args):
 
     model = Model(args.pretrainRes, args.encoder_dir, args.decoder_dir, temp=args.temp,
                   Resnet=args.Resnet, color_switch=args.color_switch_flag, coord_switch=args.coord_switch_flag)
-
-    if args.multiGPU:
-        model = torch.nn.DataParallel(model).cuda()
-        closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
-                                  F_size=torch.Size((args.batchsize // torch.cuda.device_count(), 2,
-                                                     args.patch_size // 8, args.patch_size // 8)), temp=args.temp)
-        closs = nn.DataParallel(closs).cuda()
-        optimizer = torch.optim.Adam(filter(
-            lambda p: p.requires_grad, model._modules['module'].parameters()), args.lr)
-    else:
-        closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
-                                  F_size=torch.Size((args.batchsize, 2,
-                                                     args.patch_size // 8,
-                                                     args.patch_size // 8)), temp=args.temp)
-        model.cuda()
-        closs.cuda()
-        optimizer = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, model.parameters()), args.lr)
+    model = torch.nn.DataParallel(model).cuda()
+    closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
+                              F_size=torch.Size((args.batchsize, 2,
+                                                 args.patch_size // 8,
+                                                 args.patch_size // 8)), temp=args.temp)
+    model.cuda()
+    closs.cuda()
 
     if args.resume:
         if os.path.isfile(args.resume):
@@ -203,11 +190,14 @@ def train(args):
             start_epoch = checkpoint['epoch']
             best_loss = checkpoint['best_loss']
             model.load_state_dict(checkpoint['state_dict'])
+            model = model.module
             print("=> loaded checkpoint '{} ({})' (epoch {})"
                   .format(args.resume, best_loss, checkpoint['epoch']))
         else:
+            model = model.module
             print("=> no checkpoint found at '{}'".format(args.resume))
-
+    optimizer = torch.optim.Adam(
+        filter(lambda p: p.requires_grad, model.parameters()), args.lr)
     for epoch in range(start_epoch, args.nepoch):
         if epoch < args.wepoch:
             lr = adjust_learning_rate(args, optimizer, epoch)
@@ -235,7 +225,7 @@ def forward(frame1, frame2, model, warm_up, patch_size=None):
         # print("HERE2: ", frame2.size(), new_c, patch_size)
         '''color2_gt = diff_crop(frame2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3],
                               patch_size, patch_size)'''
-        color2_gt = diff_crop_by_assembled_grid(frame2, new_c[:, :2], new_c[:, 2:])
+        color2_gt = diff_crop_by_assembled_grid(frame2, new_c[:, :2], new_c[:, 2:]-1)
         output.append(color2_gt)
     return output
 
@@ -286,16 +276,16 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             color2_est = output[0]
             aff = output[1]
             new_c = output[2]
-            #coords = output[3]
-            f1_grid,fcrop_grid=output[3]
-            #Fcolor2_crop = output[-1]
-            color2_crop=output[-1]
+            # coords = output[3]
+            f1_grid, fcrop_grid = output[3]
+            # Fcolor2_crop = output[-1]
+            color2_crop = output[-1]
 
             b, p_n1, p_n2 = aff.size()
             color1_est = None
             count = 3
 
-            constraint_loss = torch.sum(closs(aff.view(b, 1, p_n1, p_n2),f1_grid,fcrop_grid)) * args.lc
+            constraint_loss = torch.sum(closs(aff, f1_grid, fcrop_grid)) * args.lc
             c_losses.update(constraint_loss.item(), frame1_var.size(0))
 
             if args.color_switch_flag:
@@ -316,9 +306,9 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             else:
                 loss = loss_
 
-            if (i % args.log_interval == 0):
+            '''if (i % args.log_interval == 0):
                 save_vis(color2_est, color2_crop, frame1_var,
-                         frame2_var, args.savepatch, new_c)
+                         frame2_var, args.savepatch, new_c)'''
 
         losses.update(loss.item(), frame1_var.size(0))
         optimizer.zero_grad()

@@ -333,7 +333,7 @@ def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
 
 
 class SenseflyTransTrain(Dataset):
-    def __init__(self, hard_map_prob=0.2, crop_size=768, map_size=1024) -> None:
+    def __init__(self, hard_map_prob=0, crop_size=768, map_size=1024) -> None:
         self._dataset_dir = os.path.join(
             dataset_common_dir, 'sensefly_trans', 'train')
         self._dirnames = os.listdir(self._dataset_dir)
@@ -372,20 +372,28 @@ class SenseflyTransTrain(Dataset):
         img_t = torch.from_numpy(img_arr.transpose(2, 0, 1).copy()).contiguous().float()
         for t, m, s in zip(img_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
-        target_size = (self._map_size, self._map_size / map_arr.shape[0] * map_arr.shape[1]) if map_arr.shape[0] > \
+        target_size = (self._map_size, self._map_size / map_arr.shape[1] * map_arr.shape[0]) if map_arr.shape[0] < \
                                                                                                 map_arr.shape[1] else (
-            self._map_size / map_arr.shape[1] * map_arr.shape[0], self._map_size)
+            self._map_size / map_arr.shape[0] * map_arr.shape[1], self._map_size)
         map_arr = cv2.resize(map_arr, dsize=(int(target_size[0]), int(target_size[1])))
-        '''background = np.zeros((self._map_size, self._map_size, 3))
+        if target_size[0] > target_size[1]:
+            short_l = map_arr.shape[0]
+            new_l = (short_l // 8 + 1) * 8
+            map_size = (target_size[0], new_l)
+        else:
+            short_l = map_arr.shape[1]
+            new_l = (short_l // 8 + 1) * 8
+            map_size = (new_l, target_size[1])
+        background = np.zeros((map_size[1], map_size[0], 3))
         background = background.astype(np.uint8)
-        diff = self._map_size - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else self._map_size - \
-                                                                                             map_arr.shape[1]
+        diff = map_size[1] - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else map_size[0] - \
+                                                                                          map_arr.shape[1]
         offset = diff // 2
         if map_arr.shape[0] < map_arr.shape[1]:
             background[offset:offset + map_arr.shape[0], :map_arr.shape[1], :] = map_arr
         else:
-            background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr'''
-        map_arr = cv2.cvtColor(map_arr, cv2.COLOR_BGR2LAB)
+            background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr
+        map_arr = cv2.cvtColor(background, cv2.COLOR_BGR2LAB)
         map_t = torch.from_numpy(map_arr.transpose(2, 0, 1).copy()).contiguous().float()
         for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
@@ -415,9 +423,24 @@ class SenseflyTransVal(Dataset):
         pair = self._pair_list[index]
         img_arr = cv2.imread(os.path.join(self._dataset_dir, pair[0], 'imgs', pair[1]))
         img_arr = cv2.resize(img_arr, (0, 0), fx=self._scale_f, fy=self._scale_f)
-        img_arr = img_arr[: , (img_arr.shape[1] - img_arr.shape[0]) // 2:(img_arr.shape[1] - img_arr.shape[0]) // 2 +
-                    img_arr.shape[0], :].copy() if img_arr.shape[0] < img_arr.shape[1] else img_arr[(img_arr.shape[0] -
-                    img_arr.shape[1]) // 2:(img_arr.shape[0] - img_arr.shape[1]) // 2 + img_arr.shape[1],:, :].copy()
+        img_arr = img_arr[:, (img_arr.shape[1] - img_arr.shape[0]) // 2:(img_arr.shape[1] - img_arr.shape[0]) // 2 +
+                                                                        img_arr.shape[0], :].copy() if img_arr.shape[
+                                                                                                           0] < \
+                                                                                                       img_arr.shape[
+                                                                                                           1] else img_arr[
+                                                                                                                   (
+                                                                                                                           img_arr.shape[
+                                                                                                                               0] -
+                                                                                                                           img_arr.shape[
+                                                                                                                               1]) // 2:(
+                                                                                                                                                img_arr.shape[
+                                                                                                                                                    0] -
+                                                                                                                                                img_arr.shape[
+                                                                                                                                                    1]) // 2 +
+                                                                                                                                        img_arr.shape[
+                                                                                                                                            1],
+                                                                                                                   :,
+                                                                                                                   :].copy()
         map_arr = cv2.imread(os.path.join(self._dataset_dir, pair[0], 'map', pair[2]))
         map_arr = cv2.resize(map_arr, (0, 0), fx=self._scale_f, fy=self._scale_f)
         img_arr = cv2.cvtColor(img_arr, cv2.COLOR_BGR2LAB)
