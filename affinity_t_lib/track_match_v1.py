@@ -11,16 +11,17 @@ import logging
 import argparse
 import numpy as np
 import torch.nn as nn
-from affinity_t_lib.libs.loader import VidListv1, VidListv2
+from .libs.loader import VidListv1, VidListv2
 import torch.backends.cudnn as cudnn
 import affinity_t_lib.libs.transforms_multi as transforms
+
 from affinity_t_lib.model import track_match_comb as Model
 from affinity_t_lib.libs.loss import L1_loss
 from affinity_t_lib.libs.concentration_loss import ConcentrationSwitchLoss as ConcentrationLoss
 from affinity_t_lib.libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current
 from affinity_t_lib.libs.utils import diff_crop, diff_crop_by_assembled_grid
 
-from data.dataset import SenseflyTransTrain, SenseflyTransVal,getVHRRemoteDataRandomCropper
+from data.dataset import SenseflyTransTrain, SenseflyTransVal, getVHRRemoteDataRandomCropper
 
 FORMAT = "[%(asctime)-15s %(filename)s:%(lineno)d %(funcName)s] %(message)s"
 logging.basicConfig(format=FORMAT)
@@ -144,16 +145,14 @@ def adjust_learning_rate(args, optimizer, epoch):
 
 
 def create_loader(args):
-    '''
-    dataset_train_warm = VidListv1(
+    '''dataset_train_warm = VidListv1(
         args.videoRoot, args.videoList, args.patch_size, args.rotate, args.scale)
     dataset_train = VidListv2(args.videoRoot, args.videoList, args.patch_size,
-                              args.window_len, args.rotate, args.scale, args.full_size)
-    '''
-    #dataset_train_warm = SenseflyTransTrain(crop_size=args.patch_size)
-    #dataset_train = SenseflyTransTrain(crop_size=args.patch_size)
-    dataset_train,dataset_val=getVHRRemoteDataRandomCropper()
-    dataset_train_warm=dataset_train
+                              args.window_len, args.rotate, args.scale, args.full_size)'''
+    # dataset_train_warm = SenseflyTransTrain(crop_size=args.patch_size)
+    # dataset_train = SenseflyTransTrain(crop_size=args.patch_size)
+    dataset_train, dataset_val = getVHRRemoteDataRandomCropper()
+    dataset_train_warm = dataset_train
     if args.multiGPU:
         train_loader_warm = torch.utils.data.DataLoader(
             dataset_train_warm, batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True,
@@ -177,14 +176,23 @@ def train(args):
 
     model = Model(args.pretrainRes, args.encoder_dir, args.decoder_dir, temp=args.temp,
                   Resnet=args.Resnet, color_switch=args.color_switch_flag, coord_switch=args.coord_switch_flag)
-    model = torch.nn.DataParallel(model).cuda()
-    closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
-                              F_size=torch.Size((args.batchsize, 2,
-                                                 args.patch_size // 8,
-                                                 args.patch_size // 8)), temp=args.temp)
-    model.cuda()
-    closs.cuda()
-
+    if args.multiGPU:
+        model = torch.nn.DataParallel(model).cuda()
+        closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
+                                  F_size=torch.Size((args.batchsize // torch.cuda.device_count(), 2,
+                                                     args.patch_size // 8, args.patch_size // 8)), temp=args.temp)
+        closs = nn.DataParallel(closs).cuda()
+        optimizer = torch.optim.Adam(filter(
+            lambda p: p.requires_grad, model._modules['module'].parameters()), args.lr)
+    else:
+        closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
+                                  F_size=torch.Size((args.batchsize, 2,
+                                                     args.patch_size // 8,
+                                                     args.patch_size // 8)), temp=args.temp)
+        model.cuda()
+        closs.cuda()
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, model.parameters()), args.lr)
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
@@ -198,8 +206,7 @@ def train(args):
         else:
             model = model.module
             print("=> no checkpoint found at '{}'".format(args.resume))
-    optimizer = torch.optim.Adam(
-        filter(lambda p: p.requires_grad, model.parameters()), args.lr)
+
     for epoch in range(start_epoch, args.nepoch):
         if epoch < args.wepoch:
             lr = adjust_learning_rate(args, optimizer, epoch)
@@ -227,12 +234,13 @@ def forward(frame1, frame2, model, warm_up, patch_size=None):
         # print("HERE2: ", frame2.size(), new_c, patch_size)
         '''color2_gt = diff_crop(frame2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3],
                               patch_size, patch_size)'''
-        color2_gt = diff_crop_by_assembled_grid(frame2, new_c[:, :2], new_c[:, 2:]-1)
+        color2_gt = diff_crop_by_assembled_grid(frame2, new_c[:, :2], new_c[:, 2:] - 1)
         output.append(color2_gt)
     return output
 
 
 def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
+    losses = AverageMeter()
     batch_time = AverageMeter()
     losses = AverageMeter()
     c_losses = AverageMeter()
@@ -308,9 +316,9 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             else:
                 loss = loss_
 
-            '''if (i % args.log_interval == 0):
+            if (i % args.log_interval == 0):
                 save_vis(color2_est, color2_crop, frame1_var,
-                         frame2_var, args.savepatch, new_c)'''
+                         frame2_var, args.savepatch, new_c)
 
         losses.update(loss.item(), frame1_var.size(0))
         optimizer.zero_grad()
@@ -318,20 +326,20 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
         optimizer.step()
         batch_time.update(time.time() - end)
         end = time.time()
-        if (i + 1) % args.log_interval == 0:
-            if epoch >= args.wepoch and args.coord_switch_flag:
-                logger.info('Epoch: [{0}][{1}/{2}]\t'
-                            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                            'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
-                            'Coord switch Loss {scloss.val:.4f} ({scloss.avg:.4f})\t '
-                            'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
-                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, scloss=sc_losses, c_loss=c_losses))
-            else:
-                logger.info('Epoch: [{0}][{1}/{2}]\t'
-                            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                            'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
-                            'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
-                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, c_loss=c_losses))
+
+        if epoch >= args.wepoch and args.coord_switch_flag:
+            logger.info('Epoch: [{0}][{1}/{2}]\t'
+                        'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                        'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
+                        'Coord switch Loss {scloss.val:.4f} ({scloss.avg:.4f})\t '
+                        'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
+                epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, scloss=sc_losses, c_loss=c_losses))
+        else:
+            logger.info('Epoch: [{0}][{1}/{2}]\t'
+                        'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                        'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
+                        'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
+                epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, c_loss=c_losses))
 
         if ((i + 1) % args.save_interval == 0):
             is_best = losses.avg < best_loss

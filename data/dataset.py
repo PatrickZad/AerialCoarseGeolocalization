@@ -245,35 +245,35 @@ class VHRRemoteDataReader:
     def __len__(self):
         return self._lenth
 
-    def read_item(self, idx, map_size=1024, scale=0.4):
+    def read_item(self, idx, map_size=1024, crop_size=256):
         origin_img = cv.imread(os.path.join(
             self._dir, self._files[idx]))
         origin_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
         oh, ow = origin_img.shape[:2]
-        map_size = (map_size, map_size / ow * oh) if ow > oh else (map_size / oh * ow, map_size)
-        map_arr = cv.resize(origin_img, (int(map_size[0]), int(map_size[1])))
+        map_size_r = (map_size, map_size / ow * oh) if ow > oh else (map_size / oh * ow, map_size)
+        map_arr = cv.resize(origin_img, (int(map_size_r[0]), int(map_size_r[1])))
         h, w = map_arr.shape[:2]
-        if w > h:
+        '''if w > h:
             short_l = map_arr.shape[0]
             new_l = (short_l // 8 + 1) * 8
             map_size = (w, new_l)
         else:
             short_l = map_arr.shape[1]
             new_l = (short_l // 8 + 1) * 8
-            map_size = (new_l, h)
-        background = np.zeros((map_size[1], map_size[0], 3))
+            map_size = (new_l, h)'''
+        background = np.zeros((map_size, map_size, 3))
         background = background.astype(np.uint8)
-        diff = map_size[1] - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else map_size[0] - \
-                                                                                          map_arr.shape[1]
+        diff = map_size - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else map_size - \
+                                                                                       map_arr.shape[1]
         offset = diff // 2
         if map_arr.shape[0] < map_arr.shape[1]:
             background[offset:offset + map_arr.shape[0], :map_arr.shape[1], :] = map_arr
         else:
             background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr
-        crop_size = (min(h, w) * scale // 8 + 1) * 8
+        # crop_size = (min(h, w) * scale // 8 + 1) * 8
         offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
         offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
-        crop = origin_img[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
+        crop = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
         return crop, background
 
     def __next__(self):
@@ -389,7 +389,9 @@ def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
 
 
 class SenseflyTransTrain(Dataset):
+
     def __init__(self, hard_map_prob=0, crop_size=768, map_size=1024) -> None:
+
         self._dataset_dir = os.path.join(
             dataset_common_dir, 'sensefly_trans', 'train')
         self._dirnames = os.listdir(self._dataset_dir)
@@ -401,7 +403,6 @@ class SenseflyTransTrain(Dataset):
         self._pair_list = pair_list
         self._hard_map_prob = hard_map_prob
         self._crop_size = crop_size
-        self._map_size = map_size
 
     def __getitem__(self, index: int):
         pair = self._pair_list[index]
@@ -420,7 +421,7 @@ class SenseflyTransTrain(Dataset):
         img_size = img_arr.shape[:2]
         target_size = (scale_size, scale_size / img_size[0] * img_size[1]) if img_size[0] < img_size[1] else (
             scale_size / img_size[1] * img_size[0], scale_size)
-        scaled_img_arr = cv2.resize(img_arr, dsize=(int(target_size[0]), int(target_size[1])))
+        scaled_img_arr = cv.resize(img_arr, dsize=target_size)
         crop = data_aug.rand_crop(scaled_img_arr, (self._crop_size, self._crop_size))
         erase = data_aug.rand_erase(crop)
 
@@ -454,7 +455,7 @@ class SenseflyTransTrain(Dataset):
         for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
 
-        return img_t, map_t
+        return img_arr, map_arr
 
     def __len__(self) -> int:
         return len(self._pair_list)

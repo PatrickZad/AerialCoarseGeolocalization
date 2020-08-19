@@ -2,7 +2,7 @@ import cv2
 import torch
 import numpy as np
 import seaborn as sns
-from affinity_t_lib.model import transform
+from model import transform
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 UNKNOWN_FLOW_THRESH = 1e7

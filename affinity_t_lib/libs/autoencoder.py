@@ -4,7 +4,7 @@ from torchvision.models import vgg16
 from torch.autograd import Variable
 from collections import OrderedDict
 import torch.nn.functional as F
-from libs.resnet import resnet18, resnet50
+from affinity_t_lib.libs.resnet import resnet18, resnet50
 
 class encoder3(nn.Module):
     def __init__(self, reduce = False):
