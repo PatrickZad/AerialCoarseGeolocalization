@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 import torchvision.utils as vutils
 
-from libs.vis_utils import norm_mask
+from affinity_t_lib.libs.vis_utils import norm_mask
 
 ############################# GLOBAL VARIABLES ########################
 color_platte = [[0, 0, 0],[128, 0, 0],[0, 128, 0],[128, 128, 0],

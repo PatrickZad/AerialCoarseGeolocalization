@@ -3,13 +3,13 @@ import random
 import scipy.io
 import cv2
 import numpy as np
+import collections
 #from PIL import Image, ImageOps, ImageEnhance, PILLOW_VERSION
 try:
 	import accimage
 except ImportError:
 	accimage = None
 import torch
-import collections
 
 class Scale(object):
 	"""docstring for Scale"""

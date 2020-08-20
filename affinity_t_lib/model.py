@@ -102,7 +102,6 @@ def coords2bbox(coords, patch_size, h_tar, w_tar):
 
 
 class track_match_comb(nn.Module):
-
     def __init__(self, pretrained, encoder_dir=None, decoder_dir=None, temp=1, Resnet="r18", color_switch=True,
                  coord_switch=True):
         super(track_match_comb, self).__init__()
@@ -131,7 +130,7 @@ class track_match_comb(nn.Module):
         self.color_switch = color_switch
         self.coord_switch = coord_switch
 
-    def forward(self, img_ref, img_tar, warm_up=True, patch_size=None, test_result=False):
+    def forward(self, img_ref, img_tar, warm_up=True, patch_size=None):
         n, c, h_ref, w_ref = img_ref.size()
         n, c, h_tar, w_tar = img_tar.size()
         gray_ref = copy.deepcopy(img_ref[:, 0].view(n, 1, h_ref, w_ref).repeat(1, 3, 1, 1))
@@ -164,78 +163,49 @@ class track_match_comb(nn.Module):
                 color1_est = self.decoder(Fcolor1_est)
                 output.append(color1_est)
         else:
-            '''
-            # modify by patrick
             if (self.grid_flat is None):
                 self.grid_flat = create_flat_grid(Fgray2.size())
-            
-            '''
-            self.grid_flat = create_flat_grid(Fgray2.size())  # b*n2*2,general image coordinate system
-            aff_ref_tar_o = self.nlm(Fgray1, Fgray2)  # b*n1*n2
-            aff_ref_tar = torch.nn.functional.softmax(aff_ref_tar_o * self.temp, dim=2)
-            coords = torch.bmm(aff_ref_tar, self.grid_flat)  # b*n1*2,estimated coords of pts in ref in tar
+            aff_ref_tar = self.nlm(Fgray1, Fgray2)
+            aff_ref_tar = torch.nn.functional.softmax(aff_ref_tar * self.temp, dim=2)
+            coords = torch.bmm(aff_ref_tar, self.grid_flat)
             center = torch.mean(coords, dim=1)  # b * 2
-            '''
-            # modified by patrick
             # new_c = center2bbox(center, patch_size, h_tar, w_tar)
             new_c = center2bbox(center, patch_size, Fgray2.size(2), Fgray2.size(3))
-            # print("center2bbox:", new_c, h_tar, w_tar)'''
-            # scale estimation implemented by patrick
-            limit_h, limit_w = Fgray2.size(2), Fgray2.size(3)
-            expand = (coords - center.view(- 1, 1, 2)).abs().mean(dim=1)  # b*2
-            left_top = (center - expand).floor()  # b*2
-            right_bottom = (center + expand).ceil()
-            lower_bd = torch.zeros_like(left_top)
-            left_top = torch.where(left_top < lower_bd, lower_bd, left_top)
-            right_bottom = torch.where(right_bottom < lower_bd, lower_bd, right_bottom)
-            upper_bd = lower_bd + torch.tensor([[limit_w - 1, limit_h - 1]]).cuda()
-            left_top = torch.where(left_top > upper_bd, upper_bd, left_top)
-            right_bottom = torch.where(right_bottom > upper_bd, upper_bd, right_bottom)
+            # print("center2bbox:", new_c, h_tar, w_tar)
 
-            if test_result:
-                return torch.cat([left_top, right_bottom + 1], dim=-1).squeeze() * 8, aff_ref_tar
-
-            # use reimplemented diff_crop to extract sub-affinity-matrix
-            Fgray2_crop = diff_crop_by_assembled_grid(Fgray2, left_top, right_bottom)
-            '''Fgray2_crop = diff_crop(Fgray2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3], patch_size[1],
+            Fgray2_crop = diff_crop(Fgray2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3], patch_size[1],
                                     patch_size[0])
             # print("HERE: ", Fgray2.size(), Fgray1.size(), Fgray2_crop.size())
-            '''
+
             aff_p = self.nlm(Fgray1, Fgray2_crop)
             aff_norm = self.softmax(aff_p * self.temp)
-            Fcolor2_est = transform(aff_norm, Fcolor1, Fgray2_crop.size(-2), Fgray2_crop.size(-1))
+            Fcolor2_est = transform(aff_norm, Fcolor1)
             color2_est = self.decoder(Fcolor2_est)
 
             Fcolor2_full = self.rgb_encoder(img_tar)
-            '''Fcolor2_crop = diff_crop(Fcolor2_full, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3], patch_size[1],
-                                     patch_size[0])'''
-            Fcolor2_crop = diff_crop_by_assembled_grid(Fcolor2_full, left_top, right_bottom)
+            Fcolor2_crop = diff_crop(Fcolor2_full, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3], patch_size[1],
+                                     patch_size[0])
 
             output.append(color2_est)
             output.append(aff_p)
-            # output.append(new_c * 8)
-
-            output.append(torch.cat([left_top, right_bottom + 1], dim=-1) * 8)
-
-            output.append((create_grid(Fgray1.size()), create_grid(Fgray2_crop.size())))  # output.append(coords)
+            output.append(new_c * 8)
+            output.append(coords)
 
             # color orthorganal
             if self.color_switch:
-                Fcolor1_est = transform(self.softmax(aff_p.transpose(1, 2)), Fcolor2_crop, Fgray1.size(-2),
-                                        Fgray1.size(-1))
+                Fcolor1_est = transform(aff_norm.transpose(1, 2), Fcolor2_crop)
                 color1_est = self.decoder(Fcolor1_est)
                 output.append(color1_est)
 
             # coord orthorganal
             if self.coord_switch:
                 aff_norm_tran = self.softmax(aff_p.permute(0, 2, 1) * self.temp)
-                self.grid_flat_crop = create_flat_grid(Fgray1.size())  # the actual C11
-                '''if self.grid_flat_crop is None:
-                    self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0, 2, 1).detach()'''
-                C12 = torch.bmm(self.grid_flat_crop.permute(0, 2, 1), aff_norm)
+                if self.grid_flat_crop is None:
+                    self.grid_flat_crop = create_flat_grid(Fp_tar.size()).permute(0, 2, 1).detach()
+                C12 = torch.bmm(self.grid_flat_crop, aff_norm)
                 C11 = torch.bmm(C12, aff_norm_tran)
                 output.append(self.grid_flat_crop)
-                output.append(C11.permute(0, 2, 1))
+                output.append(C11)
 
         return output
 
