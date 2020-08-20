@@ -131,7 +131,7 @@ class track_match_comb(nn.Module):
         self.color_switch = color_switch
         self.coord_switch = coord_switch
 
-    def forward(self, img_ref, img_tar, warm_up=True, patch_size=None,nc_only=False):
+    def forward(self, img_ref, img_tar, warm_up=True, patch_size=None, test_result=False):
         n, c, h_ref, w_ref = img_ref.size()
         n, c, h_tar, w_tar = img_tar.size()
         gray_ref = copy.deepcopy(img_ref[:, 0].view(n, 1, h_ref, w_ref).repeat(1, 3, 1, 1))
@@ -192,8 +192,8 @@ class track_match_comb(nn.Module):
             left_top = torch.where(left_top > upper_bd, upper_bd, left_top)
             right_bottom = torch.where(right_bottom > upper_bd, upper_bd, right_bottom)
 
-            if nc_only:
-                return torch.cat([left_top, right_bottom + 1], dim=-1).squeeze()*8
+            if test_result:
+                return torch.cat([left_top, right_bottom + 1], dim=-1).squeeze() * 8, aff_ref_tar
 
             # use reimplemented diff_crop to extract sub-affinity-matrix
             Fgray2_crop = diff_crop_by_assembled_grid(Fgray2, left_top, right_bottom)

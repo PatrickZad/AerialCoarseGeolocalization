@@ -74,7 +74,7 @@ def parse_args():
 
     # set epoches
     parser.add_argument("--wepoch", type=int, default=10, help='warmup epoch')
-    parser.add_argument("--nepoch", type=int, default=128, help='max epoch')
+    parser.add_argument("--nepoch", type=int, default=64, help='max epoch')
 
     # concenration regularization
     parser.add_argument("--lc", type=float, default=1e4,
