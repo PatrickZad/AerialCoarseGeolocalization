@@ -64,18 +64,18 @@ def parse_args():
                         help='number of images (2 for pair and 3 for triple)')
     parser.add_argument("--log_interval", type=int, default=10, help='')
     parser.add_argument("--save_interval", type=int,
-                        default=1000, help='save every x epoch')
+                        default=8, help='save every x epoch')
     parser.add_argument("--momentum", type=float, default=0.9, help='momentum')
     parser.add_argument("--weight_decay", type=float,
                         default=0.005, help='weight decay')
-    parser.add_argument("--device", type=int, default=0,
+    parser.add_argument("--device", type=int, default=2,
                         help="0~device_count-1 for single GPU, device_count for dataparallel.")
     parser.add_argument("--temp", type=int, default=1,
                         help="temprature for softmax.")
 
     # set epoches
     parser.add_argument("--wepoch", type=int, default=10, help='warmup epoch')
-    parser.add_argument("--nepoch", type=int, default=64, help='max epoch')
+    parser.add_argument("--nepoch", type=int, default=128, help='max epoch')
 
     # concenration regularization
     parser.add_argument("--lc", type=float, default=1e4,
@@ -95,7 +95,7 @@ def parse_args():
         os.mkdir(args.savedir)
     args.savepatch = os.path.join(args.savedir, 'savepatch')
     args.logfile = open(os.path.join(args.savedir, "logargs.txt"), "w")
-    args.multiGPU = False  # args.device == torch.cuda.device_count()
+    args.multiGPU = args.device == torch.cuda.device_count()
 
     if not args.multiGPU:
         torch.cuda.set_device(args.device)
@@ -198,13 +198,11 @@ def train(args):
             print("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch']
-            best_loss = checkpoint['best_loss']
+            best_loss = checkpoint['best_loss'] * 10e5  # in order to do transfer training
             model.load_state_dict(checkpoint['state_dict'])
-            model = model.module
             print("=> loaded checkpoint '{} ({})' (epoch {})"
                   .format(args.resume, best_loss, checkpoint['epoch']))
         else:
-            model = model.module
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     for epoch in range(start_epoch, args.nepoch):
@@ -286,16 +284,16 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             color2_est = output[0]
             aff = output[1]
             new_c = output[2]
-            # coords = output[3]
-            f1_grid, fcrop_grid = output[3]
+            coords = output[3]
+            # f1_grid, fcrop_grid = output[3]
             # Fcolor2_crop = output[-1]
             color2_crop = output[-1]
 
-            b, p_n1, p_n2 = aff.size()
+            b, x, x = aff.size()
             color1_est = None
             count = 3
 
-            constraint_loss = torch.sum(closs(aff, f1_grid, fcrop_grid)) * args.lc
+            constraint_loss = torch.sum(closs(aff.view(b, 1, x, x))) * args.lc
             c_losses.update(constraint_loss.item(), frame1_var.size(0))
 
             if args.color_switch_flag:
@@ -328,24 +326,26 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
         end = time.time()
 
         if epoch >= args.wepoch and args.coord_switch_flag:
-            logger.info('Epoch: [{0}][{1}/{2}]\t'
-                        'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                        'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
-                        'Coord switch Loss {scloss.val:.4f} ({scloss.avg:.4f})\t '
-                        'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
-                epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, scloss=sc_losses, c_loss=c_losses))
+            if i % args.log_interval == 0:
+                logger.info('Epoch: [{0}][{1}/{2}]\t'
+                            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                            'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
+                            'Coord switch Loss {scloss.val:.4f} ({scloss.avg:.4f})\t '
+                            'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
+                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, scloss=sc_losses, c_loss=c_losses))
         else:
-            logger.info('Epoch: [{0}][{1}/{2}]\t'
-                        'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                        'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
-                        'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
-                epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, c_loss=c_losses))
+            if i % args.log_interval == 0:
+                logger.info('Epoch: [{0}][{1}/{2}]\t'
+                            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                            'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
+                            'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
+                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, c_loss=c_losses))
 
         if ((i + 1) % args.save_interval == 0):
             is_best = losses.avg < best_loss
             best_loss = min(losses.avg, best_loss)
             checkpoint_path = os.path.join(
-                args.savedir, 'checkpoint_latest.pth.tar')
+                args.savedir, 'vhr_orig_checkpoint_latest.pth.tar')
             save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
