@@ -172,9 +172,19 @@ class track_match_comb(nn.Module):
             # new_c = center2bbox(center, patch_size, h_tar, w_tar)
             new_c = center2bbox(center, patch_size, Fgray2.size(2), Fgray2.size(3))
             # print("center2bbox:", new_c, h_tar, w_tar)
+            limit_h, limit_w = Fgray2.size(2), Fgray2.size(3)
+            expand = (coords - center.view(- 1, 1, 2)).abs().mean(dim=1)  # b*2
+            left_top = center - expand  # b*2
+            right_bottom = center + expand
+            left_top[left_top < 0] = 0
+            right_bottom[:, 0][right_bottom[:, 0] > limit_w] = limit_w
+            right_bottom[:, 1][right_bottom[:, 1] > limit_h] = limit_h
 
-            Fgray2_crop = diff_crop(Fgray2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3], patch_size[1],
-                                    patch_size[0])
+            Fgray2_crop = diff_crop(Fgray2, left_top[:, 0], left_top[:, 1], right_bottom[:, 0], right_bottom[:, 1],
+                                    patch_size[1], patch_size[0])
+
+            # Fgray2_crop = diff_crop(Fgray2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3], patch_size[1],
+            #                        patch_size[0])
             # print("HERE: ", Fgray2.size(), Fgray1.size(), Fgray2_crop.size())
 
             aff_p = self.nlm(Fgray1, Fgray2_crop)
@@ -201,7 +211,7 @@ class track_match_comb(nn.Module):
             if self.coord_switch:
                 aff_norm_tran = self.softmax(aff_p.permute(0, 2, 1) * self.temp)
                 if self.grid_flat_crop is None:
-                    self.grid_flat_crop = create_flat_grid(Fp_tar.size()).permute(0, 2, 1).detach()
+                    self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0, 2, 1).detach()
                 C12 = torch.bmm(self.grid_flat_crop, aff_norm)
                 C11 = torch.bmm(C12, aff_norm_tran)
                 output.append(self.grid_flat_crop)
