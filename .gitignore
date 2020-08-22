@@ -4,3 +4,5 @@
 /.idea
 /model_zoo
 /__pycache__
+*.pth
+*.pth.tar
