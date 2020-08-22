@@ -130,7 +130,7 @@ def norm_mask(mask):
     return mask
 
 
-def create_grid(F_size, GPU=True):
+'''def create_grid(F_size, GPU=True):
     # implemented by patrick
     b, c, h, w = F_size
     grid_x = torch.arange(start=0, end=w).reshape(1, 1, -1, 1)
@@ -166,7 +166,7 @@ def diff_crop_by_assembled_grid(feature_map, lt, rb):
     samp_grid = ltrb_thred / (scale_t / 2) - 1
     crop = torch.nn.functional.grid_sample(feature_map, samp_grid)
     return crop
-
+'''
 
 def diff_crop(F, x1, y1, x2, y2, ph, pw):
     """

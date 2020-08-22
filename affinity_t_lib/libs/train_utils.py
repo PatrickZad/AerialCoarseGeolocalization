@@ -6,6 +6,7 @@ import shutil
 import numpy as np
 from affinity_t_lib.libs.vis_utils import draw_certainty_map, flow_to_rgb, prepare_img
 from os.path import join
+from random import randint
 
 
 def draw_bbox(img,bbox):

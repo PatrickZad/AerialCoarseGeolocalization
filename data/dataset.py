@@ -245,7 +245,12 @@ class VHRRemoteDataReader:
     def __len__(self):
         return self._lenth
 
+
+    def img_name(self, idx):
+        return self._files[idx]
+
     def read_item(self, idx, map_size=1024, crop_size=256):
+
         origin_img = cv.imread(os.path.join(
             self._dir, self._files[idx]))
         origin_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
@@ -270,7 +275,9 @@ class VHRRemoteDataReader:
             background[offset:offset + map_arr.shape[0], :map_arr.shape[1], :] = map_arr
         else:
             background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr
+
         # crop_size = (min(h, w) * scale // 8 + 1) * 8
+
         offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
         offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
         crop = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
@@ -375,6 +382,26 @@ class VHRRemoteDataset(Dataset):
         return crop_t, map_t
 
 
+class VHRRemoteVal(Dataset):
+    def __init__(self, data_reader: VHRRemoteDataReader):
+        self._data_reader = data_reader
+
+    def __len__(self):
+        return self._data_reader.__len__()
+
+    def __getitem__(self, item):
+        crop_rgb, map_arr_rgb = self._data_reader.read_item(item)
+        crop = cv.cvtColor(crop_rgb, cv.COLOR_RGB2LAB)
+        map_arr = cv.cvtColor(map_arr_rgb, cv.COLOR_RGB2LAB)
+        map_t = torch.from_numpy(map_arr.transpose(2, 0, 1).copy()).contiguous().float()
+        for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
+            t.sub_(m).div_(s)
+        crop_t = torch.from_numpy(crop.transpose(2, 0, 1).copy()).contiguous().float()
+        for t, m, s in zip(crop_t, [128, 128, 128], [128, 128, 128]):
+            t.sub_(m).div_(s)
+        return 'vhr', crop_t, 'crop' + str(crop.shape[0]), map_t, self._data_reader.img_name(item), (crop_rgb, map_arr_rgb)
+
+
 def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
     dir = os.path.join(dataset_common_dir, 'VHR Remote Sensing')
     dir_files = os.listdir(dir)
@@ -385,7 +412,7 @@ def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
     part2 = dir_files[len1:]
     train = VHRRemoteDataReader(dir, part1, aug)
     val = VHRRemoteDataReader(dir, part2, aug)
-    return VHRRemoteDataset(train), VHRRemoteDataset(val)
+    return VHRRemoteDataset(train), VHRRemoteVal(val)
 
 
 class SenseflyTransTrain(Dataset):

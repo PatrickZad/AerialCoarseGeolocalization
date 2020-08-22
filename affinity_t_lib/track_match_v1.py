@@ -11,15 +11,15 @@ import logging
 import argparse
 import numpy as np
 import torch.nn as nn
-from .libs.loader import VidListv1, VidListv2
+# from .libs.loader import VidListv1, VidListv2
 import torch.backends.cudnn as cudnn
-import affinity_t_lib.libs.transforms_multi as transforms
+# import affinity_t_lib.libs.transforms_multi as transforms
 
 from affinity_t_lib.model import track_match_comb as Model
 from affinity_t_lib.libs.loss import L1_loss
 from affinity_t_lib.libs.concentration_loss import ConcentrationSwitchLoss as ConcentrationLoss
 from affinity_t_lib.libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current
-from affinity_t_lib.libs.utils import diff_crop, diff_crop_by_assembled_grid
+from affinity_t_lib.libs.utils import diff_crop  # , diff_crop_by_assembled_grid
 
 from data.dataset import SenseflyTransTrain, SenseflyTransVal, getVHRRemoteDataRandomCropper
 
@@ -75,7 +75,7 @@ def parse_args():
 
     # set epoches
     parser.add_argument("--wepoch", type=int, default=10, help='warmup epoch')
-    parser.add_argument("--nepoch", type=int, default=128, help='max epoch')
+    parser.add_argument("--nepoch", type=int, default=64, help='max epoch')
 
     # concenration regularization
     parser.add_argument("--lc", type=float, default=1e4,
@@ -232,9 +232,9 @@ def forward(frame1, frame2, model, warm_up, patch_size=None):
         new_c = output[2]
         # gt patch
         # print("HERE2: ", frame2.size(), new_c, patch_size)
-        '''color2_gt = diff_crop(frame2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3],
-                              patch_size, patch_size)'''
-        color2_gt = diff_crop_by_assembled_grid(frame2, new_c[:, :2], new_c[:, 2:] - 1)
+        color2_gt = diff_crop(frame2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3],
+                              patch_size, patch_size)
+        # color2_gt = diff_crop_by_assembled_grid(frame2, new_c[:, :2], new_c[:, 2:] - 1)
         output.append(color2_gt)
     return output
 
