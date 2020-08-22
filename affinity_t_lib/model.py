@@ -55,7 +55,7 @@ def create_flat_grid(F_size, GPU=True):
      - return a standard grid coordinate
     """
     b, c, h, w = F_size
-    '''theta = torch.tensor([[1, 0, 0], [0, 1, 0]])
+    theta = torch.tensor([[1, 0, 0], [0, 1, 0]])
     theta = theta.unsqueeze(0).repeat(b, 1, 1)
     theta = theta.float()
 
@@ -63,14 +63,14 @@ def create_flat_grid(F_size, GPU=True):
     # b * (h*w) * 2
     grid = torch.nn.functional.affine_grid(theta, F_size)
     grid[:, :, :, 0] = (grid[:, :, :, 0] + 1) / 2 * w
-    grid[:, :, :, 1] = (grid[:, :, :, 1] + 1) / 2 * h'''
+    grid[:, :, :, 1] = (grid[:, :, :, 1] + 1) / 2 * h
     # re-implemented by patrick
-    grid = create_grid(F_size, GPU)
+    #grid = create_grid(F_size, GPU)
     grid_flat = grid.view(b, -1, 2)
     # re-implemented by patrick
-    '''
+
     if (GPU):
-        grid_flat = grid_flat.cuda()'''
+        grid_flat = grid_flat.cuda()
     return grid_flat
 
 
@@ -201,7 +201,7 @@ class track_match_comb(nn.Module):
             if self.coord_switch:
                 aff_norm_tran = self.softmax(aff_p.permute(0, 2, 1) * self.temp)
                 if self.grid_flat_crop is None:
-                    self.grid_flat_crop = create_flat_grid(Fp_tar.size()).permute(0, 2, 1).detach()
+                    self.grid_flat_crop = create_flat_grid(Fgray1.size()).permute(0, 2, 1).detach()
                 C12 = torch.bmm(self.grid_flat_crop, aff_norm)
                 C11 = torch.bmm(C12, aff_norm_tran)
                 output.append(self.grid_flat_crop)
