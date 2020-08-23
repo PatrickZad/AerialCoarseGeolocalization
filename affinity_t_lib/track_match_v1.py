@@ -227,10 +227,10 @@ def forward(frame1, frame2, model, warm_up, patch_size=None):
     else:
         output = model(frame1, frame2, warm_up=False,
                        patch_size=[patch_size // 8, patch_size // 8])
-        new_c = output[2]
+        bbox = output[2]
         # gt patch
         # print("HERE2: ", frame2.size(), new_c, patch_size)
-        color2_gt = diff_crop(frame2, new_c[:, 0], new_c[:, 2], new_c[:, 1], new_c[:, 3],
+        color2_gt = diff_crop(frame2, bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3],
                               patch_size, patch_size)
         # color2_gt = diff_crop_by_assembled_grid(frame2, new_c[:, :2], new_c[:, 2:] - 1)
         output.append(color2_gt)

@@ -61,11 +61,11 @@ if (__name__ == '__main__'):
     # loading pretrained model
     model = Model(args.pretrainRes, args.encoder_dir, args.decoder_dir, temp=args.temp, Resnet=args.Resnet,
                   color_switch=False, coord_switch=False)
-    # model = torch.nn.DataParallel(model).cuda()
+    model = torch.nn.DataParallel(model).cuda()
     checkpoint = torch.load(args.resume)
     best_loss = checkpoint['best_loss']
     model.load_state_dict(checkpoint['state_dict'])
-    # model = model.module
+    model = model.module
     model.cuda()
     model.eval()
 
@@ -73,7 +73,8 @@ if (__name__ == '__main__'):
     dataset_t, dataset = getVHRRemoteDataRandomCropper(0)
     # scale_f = 0.4
     # dataset = SenseflyTransVal(scale_f=scale_f)
-    loader = DataLoader(dataset, batch_size=1)
+    loader = DataLoader(dataset,batch_size=1)# batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True,
+                        #drop_last=True)
     # dataset_dir = dataset.get_dataset_dir()
     save_dir = args.savedir
     for env_dir, img_t, img_file, map_t, map_file, (img_arr, map_arr) in loader:
@@ -91,6 +92,7 @@ if (__name__ == '__main__'):
         loc_box, aff = model(img_t, map_t, False, patch_size=[img_arr.shape[0] // 8, img_arr.shape[1] // 8],
                              test_result=True)
         aff = aff.squeeze()
+        loc_box=loc_box.squeeze()
         aff_arr = (aff * 255).cpu().detach().numpy()
         aff_arr = aff_arr.astype(np.uint8)
         heat_map = cv2.applyColorMap(aff_arr, cv2.COLORMAP_JET)
