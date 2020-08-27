@@ -52,9 +52,9 @@ def parse_args():
     parser.add_argument("--pretrainRes", action="store_true")
     parser.add_argument("--batchsize", type=int, default=1, help="batchsize")
     parser.add_argument('--workers', type=int, default=16)
-    parser.add_argument("--patch_size", type=int, default=768,
+    parser.add_argument("--patch_size", type=int, default=256,
                         help="crop size for localization.")
-    parser.add_argument("--full_size", type=int, default=768,
+    parser.add_argument("--full_size", type=int, default=1024,
                         help="full size for one frame.")
 
     parser.add_argument("--lr", type=float, default=0.0001,
@@ -72,6 +72,9 @@ def parse_args():
                         help="0~device_count-1 for single GPU, device_count for dataparallel.")
     parser.add_argument("--temp", type=int, default=1,
                         help="temprature for softmax.")
+
+    parser.add_argument("--scale-modeling",dest='estimate_scale',const=True,default=False,
+                        help="do scale modeling or not")
 
     # set epoches
     parser.add_argument("--wepoch", type=int, default=10, help='warmup epoch')

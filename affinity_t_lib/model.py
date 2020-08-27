@@ -82,6 +82,7 @@ def coords2bbox(coords, patch_size, h_tar, w_tar):
      - h_tar: target image height
      - w_tar: target image widthg
     """
+    # change to left-top-right-bottom
     b = coords.size(0)
     center = torch.mean(coords, dim=1)  # b * 2
     center_repeat = center.unsqueeze(1).repeat(1, coords.size(1), 1)
@@ -97,13 +98,13 @@ def coords2bbox(coords, patch_size, h_tar, w_tar):
     top[top < 0] = 0
     bottom = (center[:, 1] + dis_y * 2).view(b, 1)
     bottom[bottom > h_tar] = h_tar
-    new_center = torch.cat((left, right, top, bottom), dim=1)
+    new_center = torch.cat((left, top, right, bottom), dim=1)
     return new_center
 
 
 class track_match_comb(nn.Module):
     def __init__(self, pretrained, encoder_dir=None, decoder_dir=None, temp=1, Resnet="r18", color_switch=True,
-                 coord_switch=True):
+                 coord_switch=True, model_scale=False):
         super(track_match_comb, self).__init__()
 
         if Resnet in "r18":
@@ -129,6 +130,7 @@ class track_match_comb(nn.Module):
         self.grid_flat_crop = None
         self.color_switch = color_switch
         self.coord_switch = coord_switch
+        self.model_scale = model_scale
 
     def forward(self, img_ref, img_tar, warm_up=True, patch_size=None, test_result=False):
         n, c, h_ref, w_ref = img_ref.size()
@@ -168,18 +170,22 @@ class track_match_comb(nn.Module):
             aff_ref_tar = self.nlm(Fgray1, Fgray2)
             aff_ref_tar = torch.nn.functional.softmax(aff_ref_tar * self.temp, dim=2)
             coords = torch.bmm(aff_ref_tar, self.grid_flat)
-            center = torch.mean(coords, dim=1)  # b * 2
-            # new_c = center2bbox(center, patch_size, h_tar, w_tar)
+
+            if not self.model_scale:
+                center = torch.mean(coords, dim=1)  # b * 2
+                bbox = center2bbox(center, patch_size, h_tar, w_tar)
             # new_c = center2bbox(center, patch_size, Fgray2.size(2), Fgray2.size(3))
             # print("center2bbox:", new_c, h_tar, w_tar)
-            limit_h, limit_w = Fgray2.size(2), Fgray2.size(3)
-            expand = (coords - center.view(- 1, 1, 2)).abs().mean(dim=1)  # b*2
-            left_top = center - expand  # b*2
-            right_bottom = center + expand
-            left_top[left_top < 0] = 0
-            right_bottom[:, 0][right_bottom[:, 0] > limit_w] = limit_w
-            right_bottom[:, 1][right_bottom[:, 1] > limit_h] = limit_h
-            bbox = torch.cat([left_top, right_bottom], dim=-1)
+            else:
+                bbox = coords2bbox(coords, patch_size, h_tar, w_tar)
+                '''limit_h, limit_w = Fgray2.size(2), Fgray2.size(3)
+                expand = (coords - center.view(- 1, 1, 2)).abs().mean(dim=1)  # b*2
+                left_top = center - expand  # b*2
+                right_bottom = center + expand
+                left_top[left_top < 0] = 0
+                right_bottom[:, 0][right_bottom[:, 0] > limit_w] = limit_w
+                right_bottom[:, 1][right_bottom[:, 1] > limit_h] = limit_h
+                bbox = torch.cat([left_top, right_bottom], dim=-1)'''
             if test_result:
                 return bbox, aff_ref_tar
 

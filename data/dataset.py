@@ -402,7 +402,7 @@ class VHRRemoteVal(Dataset):
         return 'vhr', crop_t, 'crop' + str(crop.shape[0]), map_t, self._data_reader.img_name(item), (crop_rgb, map_arr_rgb)
 
 
-def getVHRRemoteDataRandomCropper(proportion=1, aug=aug_methods):
+def getVHRRemoteDataRandomCropper(crop_size=288,,proportion=1, aug=aug_methods):
     dir = os.path.join(dataset_common_dir, 'VHR Remote Sensing')
     dir_files = os.listdir(dir)
     length = len(dir_files)

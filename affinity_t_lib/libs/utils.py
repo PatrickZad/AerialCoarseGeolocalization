@@ -195,6 +195,7 @@ def diff_crop(F, x1, y1, x2, y2, ph, pw):
 
 
 def center2bbox(center, patch_size, h, w):
+    #change to left-top-right-bottom
     b = center.size(0)
     if (isinstance(patch_size, int)):
         new_l = center[:, 0] - patch_size / 2
@@ -222,7 +223,7 @@ def center2bbox(center, patch_size, h, w):
         new_b = new_t + patch_size[0]
     new_b[new_b > h] = h
 
-    new_center = torch.cat((new_l, new_r, new_t, new_b), dim=1)
+    new_center = torch.cat((new_l, new_t,new_r, new_b), dim=1)
     return new_center
 
 
