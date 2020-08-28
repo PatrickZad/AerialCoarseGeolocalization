@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument("--full_size", type=int, default=1024,
                         help="full size for one frame.")
 
-    parser.add_argument("--lr", type=float, default=0.0001,
+    parser.add_argument("--lr", type=float, default=0.00001,
                         help='learning rate')
     parser.add_argument('--lr-mode', type=str, default='poly')
     parser.add_argument("--window_len", type=int, default=2,
@@ -383,4 +383,4 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 if __name__ == '__main__':
     args = parse_args()
     train(args)
-    writer.close()
+    #writer.close()
