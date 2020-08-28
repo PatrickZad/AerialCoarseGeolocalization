@@ -245,7 +245,6 @@ class VHRRemoteDataReader:
     def __len__(self):
         return self._lenth
 
-
     def img_name(self, idx):
         return self._files[idx]
 
@@ -258,14 +257,6 @@ class VHRRemoteDataReader:
         map_size_r = (map_size, map_size / ow * oh) if ow > oh else (map_size / oh * ow, map_size)
         map_arr = cv.resize(origin_img, (int(map_size_r[0]), int(map_size_r[1])))
         h, w = map_arr.shape[:2]
-        '''if w > h:
-            short_l = map_arr.shape[0]
-            new_l = (short_l // 8 + 1) * 8
-            map_size = (w, new_l)
-        else:
-            short_l = map_arr.shape[1]
-            new_l = (short_l // 8 + 1) * 8
-            map_size = (new_l, h)'''
         background = np.zeros((map_size, map_size, 3))
         background = background.astype(np.uint8)
         diff = map_size - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else map_size - \
@@ -282,6 +273,25 @@ class VHRRemoteDataReader:
         offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
         crop = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
         return crop, background
+
+    def crop_pair(self, idx, map_size=1024, crop_size=256):
+        origin_img = cv.imread(os.path.join(
+            self._dir, self._files[idx]))
+        origin_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
+        oh, ow = origin_img.shape[:2]
+        map_size_r = (map_size, map_size / ow * oh) if ow > oh else (map_size / oh * ow, map_size)
+        map_arr = cv.resize(origin_img, (int(map_size_r[0]), int(map_size_r[1])))
+        h, w = map_arr.shape[:2]
+        offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
+        offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
+        crop1 = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
+        offset_x2, offset_y2 = map_size_r
+        while offset_x + offset_x2 + crop_size > map_size_r[0] or offset_y + offset_y2 + crop_size > map_size_r[1]:
+            offset_x2 = np.random.randint(-offset_x, int(0.5 * crop_size))
+            offset_y2 = np.random.randint(-offset_y, int(0.5 * crop_size))
+        crop2 = map_arr[offset_y + offset_y2:offset_y + offset_y2 + crop_size,
+                offset_x + offset_x2:offset_x + offset_x2 + crop_size, :].copy()
+        return crop1, crop2
 
     def __next__(self):
         if self._next == self._lenth:
@@ -363,34 +373,39 @@ class VHRRemoteDataReader:
 
 
 class VHRRemoteDataset(Dataset):
-    def __init__(self, data_reader: VHRRemoteDataReader):
+    def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size):
         self._data_reader = data_reader
+        self._crop_size = crop_size
+        self._map_size = map_size
 
     def __len__(self):
         return self._data_reader.__len__()
 
-    def __getitem__(self, item):
-        crop, map_arr = self._data_reader.read_item(item)
-        crop = cv.cvtColor(crop, cv.COLOR_RGB2LAB)
-        map_arr = cv.cvtColor(map_arr, cv.COLOR_RGB2LAB)
-        map_t = torch.from_numpy(map_arr.transpose(2, 0, 1).copy()).contiguous().float()
-        for t, m, s in zip(map_t, [128, 128, 128], [128, 128, 128]):
+    def __getitem__(self, item, return_rgb=False, return_pair=False):
+        if return_pair:
+            ref, tar = self._data_reader.crop_pair(item, self._map_size, self._crop_size)
+        else:
+            ref, tar = self._data_reader.read_item(item, self._map_size, self._crop_size)
+        ref = cv.cvtColor(ref, cv.COLOR_RGB2LAB)
+        tar = cv.cvtColor(tar, cv.COLOR_RGB2LAB)
+        tar_t = torch.from_numpy(tar.transpose(2, 0, 1).copy()).contiguous().float()
+        for t, m, s in zip(tar_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
-        crop_t = torch.from_numpy(crop.transpose(2, 0, 1).copy()).contiguous().float()
-        for t, m, s in zip(crop_t, [128, 128, 128], [128, 128, 128]):
+        ref_t = torch.from_numpy(ref.transpose(2, 0, 1).copy()).contiguous().float()
+        for t, m, s in zip(ref_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)
-        return crop_t, map_t
+        return_data = [ref_t, tar_t]
+        if return_rgb:
+            return_data += [ref, tar]
+        return return_data
 
 
-class VHRRemoteVal(Dataset):
-    def __init__(self, data_reader: VHRRemoteDataReader):
-        self._data_reader = data_reader
-
-    def __len__(self):
-        return self._data_reader.__len__()
+class VHRRemoteVal(VHRRemoteDataset):
+    def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size):
+        super.__init__(self, data_reader, crop_size, map_size)
 
     def __getitem__(self, item):
-        crop_rgb, map_arr_rgb = self._data_reader.read_item(item)
+        '''crop_rgb, map_arr_rgb = self._data_reader.read_item(item)
         crop = cv.cvtColor(crop_rgb, cv.COLOR_RGB2LAB)
         map_arr = cv.cvtColor(map_arr_rgb, cv.COLOR_RGB2LAB)
         map_t = torch.from_numpy(map_arr.transpose(2, 0, 1).copy()).contiguous().float()
@@ -398,21 +413,42 @@ class VHRRemoteVal(Dataset):
             t.sub_(m).div_(s)
         crop_t = torch.from_numpy(crop.transpose(2, 0, 1).copy()).contiguous().float()
         for t, m, s in zip(crop_t, [128, 128, 128], [128, 128, 128]):
-            t.sub_(m).div_(s)
-        return 'vhr', crop_t, 'crop' + str(crop.shape[0]), map_t, self._data_reader.img_name(item), (crop_rgb, map_arr_rgb)
+            t.sub_(m).div_(s)'''
+        crop_t, map_t, crop_rgb, map_arr_rgb = super.__getitem__(item, True)
+        return 'vhr', crop_t, 'crop' + str(crop_rgb.shape[0]), map_t, self._data_reader.img_name(item), (
+            crop_rgb, map_arr_rgb)
 
 
-def getVHRRemoteDataRandomCropper(crop_size=288,,proportion=1, aug=aug_methods):
+class VHRRemoteWarm(VHRRemoteDataset):
+    def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size):
+        super.__init__(self, data_reader, crop_size, map_size)
+
+    def __getitem__(self, item):
+        ref_t, tar_t = super.__getitem__(item, return_pair=True)
+        return ref_t, tar_t
+
+
+def getVHRRemoteDataRandomCropper(crop_size=288, map_size=1024, proportion=(0.8, 0.8, 0.2), aug=aug_methods):
+    # warm,train,val
     dir = os.path.join(dataset_common_dir, 'VHR Remote Sensing')
     dir_files = os.listdir(dir)
     length = len(dir_files)
+    len1 = int(length * proportion[0])
+    len2 = int(length * proportion[1])
+    len3 = int(length * proportion[2])
     np.random.shuffle(dir_files)
-    len1 = int(length * proportion)
     part1 = dir_files[:len1]
-    part2 = dir_files[len1:]
-    train = VHRRemoteDataReader(dir, part1, aug)
-    val = VHRRemoteDataReader(dir, part2, aug)
-    return VHRRemoteDataset(train), VHRRemoteVal(val)
+    np.random.shuffle(dir_files)
+    part2 = dir_files[:len2]
+    np.random.shuffle(dir_files)
+    part3 = dir_files[:len3]
+    warm = VHRRemoteDataReader(dir, part1, aug)
+    train = VHRRemoteDataReader(dir, part2, aug)
+    val = VHRRemoteDataReader(dir, part3, aug)
+
+    return VHRRemoteDataset(warm, crop_size, map_size), VHRRemoteDataset(train, crop_size, map_size), VHRRemoteVal(val,
+                                                                                                                   crop_size,
+                                                                                                                   map_size)
 
 
 class SenseflyTransTrain(Dataset):

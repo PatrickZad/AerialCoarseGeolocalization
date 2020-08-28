@@ -73,7 +73,7 @@ def parse_args():
     parser.add_argument("--temp", type=int, default=1,
                         help="temprature for softmax.")
 
-    parser.add_argument("--scale-modeling",dest='estimate_scale',const=True,default=False,
+    parser.add_argument("--scale-modeling", dest='estimate_scale', const=True, default=False,
                         help="do scale modeling or not")
 
     # set epoches
@@ -154,8 +154,7 @@ def create_loader(args):
                               args.window_len, args.rotate, args.scale, args.full_size)'''
     # dataset_train_warm = SenseflyTransTrain(crop_size=args.patch_size)
     # dataset_train = SenseflyTransTrain(crop_size=args.patch_size)
-    dataset_train, dataset_val = getVHRRemoteDataRandomCropper()
-    dataset_train_warm = dataset_train
+    dataset_train_warm, dataset_train, dataset_val = getVHRRemoteDataRandomCropper()
     if args.multiGPU:
         train_loader_warm = torch.utils.data.DataLoader(
             dataset_train_warm, batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True,
@@ -201,8 +200,13 @@ def train(args):
             print("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch']
-            best_loss = checkpoint['best_loss'] * 10e5  # in order to do transfer training
-            model.load_state_dict(checkpoint['state_dict'])
+            best_loss = checkpoint['best_loss'] * 1e5  # in order to do transfer training
+            if not args.multiGPU:
+                model = torch.nn.DataParallel(model).cuda()
+                model.load_state_dict(checkpoint['state_dict'])
+                model = model.module
+            else:
+                model.load_state_dict(checkpoint['state_dict'])
             print("=> loaded checkpoint '{} ({})' (epoch {})"
                   .format(args.resume, best_loss, checkpoint['epoch']))
         else:
@@ -251,7 +255,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
         coord_switch_loss = nn.L1Loss()
         sc_losses = AverageMeter()
 
-    if epoch < 1 or (epoch >= args.wepoch and epoch < args.wepoch + 2):
+    if epoch < 1 or (args.wepoch <= epoch < args.wepoch + 2):
         thr = None
     else:
         thr = 2.5
@@ -349,9 +353,11 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             best_loss = min(losses.avg, best_loss)
             checkpoint_path = os.path.join(
                 args.savedir, 'vhr_orig_checkpoint_latest.pth.tar')
+            if not args.mmultiGPU:
+                save_model=torch.nn.DataParallel(model).cuda()
             save_checkpoint({
                 'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
+                'state_dict': save_model.state_dict(),
                 'best_loss': best_loss,
             }, is_best, filename=checkpoint_path, savedir=args.savedir)
             log_current(epoch, losses.avg, best_loss,

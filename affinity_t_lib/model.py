@@ -148,6 +148,15 @@ class track_match_comb(nn.Module):
         Fgray2 = self.gray_encoder(gray_tar)
         Fcolor1 = self.rgb_encoder(img_ref)
 
+        f_ref_size = Fgray1.size(2)
+        if f_ref_size > patch_size[0]:
+            center = f_ref_size // 2
+            half_patch_size = patch_size // 2
+            Fgray1 = Fgray1[..., center - half_patch_size:center - half_patch_size + patch_size[0],
+                     center - half_patch_size:center - half_patch_size + patch_size[0]]
+            Fcolor1 = Fcolor1[..., center - half_patch_size:center - half_patch_size + patch_size[0],
+                      center - half_patch_size:center - half_patch_size + patch_size[0]]
+
         output = []
 
         if warm_up:
@@ -161,7 +170,8 @@ class track_match_comb(nn.Module):
 
             if self.color_switch:
                 Fcolor2 = self.rgb_encoder(img_tar)
-                Fcolor1_est = transform(aff_norm.transpose(1, 2), Fcolor2)
+                # correct aff-softmax
+                Fcolor1_est = transform(self.softmax(aff.transpose(1, 2)), Fcolor2)
                 color1_est = self.decoder(Fcolor1_est)
                 output.append(color1_est)
         else:
@@ -212,7 +222,8 @@ class track_match_comb(nn.Module):
 
             # color orthorganal
             if self.color_switch:
-                Fcolor1_est = transform(aff_norm.transpose(1, 2), Fcolor2_crop)
+                # correct aff-softmax
+                Fcolor1_est = transform(self.softmax(aff_p.transpose(1, 2)), Fcolor2_crop)
                 color1_est = self.decoder(Fcolor1_est)
                 output.append(color1_est)
 
