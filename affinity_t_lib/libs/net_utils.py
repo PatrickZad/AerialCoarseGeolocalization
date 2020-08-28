@@ -117,9 +117,9 @@ class NLM_woSoft(nn.Module):
 
     def forward(self, in1, in2):
         n, c, h, w = in1.size()
-        #N = h * w
-        in1 = in1.view(n, c, -1)  # a batch of 2d matrices
-        in2 = in2.view(n, c, -1)
+        # N = h * w
+        in1 = in1.reshape((n, c, -1))  # a batch of 2d matrices
+        in2 = in2.reshape((n, c, -1))
         if self.is_norm:
             in1 = self.norm(in1)
             in2 = self.norm(in2)

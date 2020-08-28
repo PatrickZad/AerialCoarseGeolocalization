@@ -287,8 +287,8 @@ class VHRRemoteDataReader:
         crop1 = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
         offset_x2, offset_y2 = map_size_r
         while offset_x + offset_x2 + crop_size > map_size_r[0] or offset_y + offset_y2 + crop_size > map_size_r[1]:
-            offset_x2 = np.random.randint(-offset_x, int(0.5 * crop_size))
-            offset_y2 = np.random.randint(-offset_y, int(0.5 * crop_size))
+            offset_x2 = np.random.randint(-offset_x, int(0.2 * crop_size))
+            offset_y2 = np.random.randint(-offset_y, int(0.2 * crop_size))
         crop2 = map_arr[offset_y + offset_y2:offset_y + offset_y2 + crop_size,
                 offset_x + offset_x2:offset_x + offset_x2 + crop_size, :].copy()
         return crop1, crop2
@@ -402,7 +402,7 @@ class VHRRemoteDataset(Dataset):
 
 class VHRRemoteVal(VHRRemoteDataset):
     def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size):
-        super.__init__(self, data_reader, crop_size, map_size)
+        super(VHRRemoteVal, self).__init__(data_reader, crop_size, map_size)
 
     def __getitem__(self, item):
         '''crop_rgb, map_arr_rgb = self._data_reader.read_item(item)
@@ -414,17 +414,17 @@ class VHRRemoteVal(VHRRemoteDataset):
         crop_t = torch.from_numpy(crop.transpose(2, 0, 1).copy()).contiguous().float()
         for t, m, s in zip(crop_t, [128, 128, 128], [128, 128, 128]):
             t.sub_(m).div_(s)'''
-        crop_t, map_t, crop_rgb, map_arr_rgb = super.__getitem__(item, True)
+        crop_t, map_t, crop_rgb, map_arr_rgb = super(VHRRemoteVal, self).__getitem__(item, True)
         return 'vhr', crop_t, 'crop' + str(crop_rgb.shape[0]), map_t, self._data_reader.img_name(item), (
             crop_rgb, map_arr_rgb)
 
 
 class VHRRemoteWarm(VHRRemoteDataset):
     def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size):
-        super.__init__(self, data_reader, crop_size, map_size)
+        super(VHRRemoteWarm, self).__init__(data_reader, crop_size, map_size)
 
     def __getitem__(self, item):
-        ref_t, tar_t = super.__getitem__(item, return_pair=True)
+        ref_t, tar_t = super(VHRRemoteWarm, self).__getitem__(item, return_pair=True)
         return ref_t, tar_t
 
 
@@ -446,9 +446,8 @@ def getVHRRemoteDataRandomCropper(crop_size=288, map_size=1024, proportion=(0.8,
     train = VHRRemoteDataReader(dir, part2, aug)
     val = VHRRemoteDataReader(dir, part3, aug)
 
-    return VHRRemoteDataset(warm, crop_size, map_size), VHRRemoteDataset(train, crop_size, map_size), VHRRemoteVal(val,
-                                                                                                                   crop_size,
-                                                                                                                   map_size)
+    return VHRRemoteWarm(warm, crop_size, map_size), VHRRemoteDataset(train, crop_size, map_size), \
+           VHRRemoteVal(val, crop_size, map_size)
 
 
 class SenseflyTransTrain(Dataset):

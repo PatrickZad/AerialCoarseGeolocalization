@@ -50,7 +50,7 @@ def parse_args():
 
     # main parameters
     parser.add_argument("--pretrainRes", action="store_true")
-    parser.add_argument("--batchsize", type=int, default=1, help="batchsize")
+    parser.add_argument("--batchsize", type=int, default=4, help="batchsize")
     parser.add_argument('--workers', type=int, default=16)
     parser.add_argument("--patch_size", type=int, default=256,
                         help="crop size for localization.")
@@ -73,12 +73,12 @@ def parse_args():
     parser.add_argument("--temp", type=int, default=1,
                         help="temprature for softmax.")
 
-    parser.add_argument("--scale-modeling", dest='estimate_scale', const=True, default=False,
+    parser.add_argument("--scale-modeling", dest='estimate_scale', action='store_const', const=True, default=False,
                         help="do scale modeling or not")
 
     # set epoches
     parser.add_argument("--wepoch", type=int, default=10, help='warmup epoch')
-    parser.add_argument("--nepoch", type=int, default=128, help='max epoch')
+    parser.add_argument("--nepoch", type=int, default=64, help='max epoch')
 
     # concenration regularization
     parser.add_argument("--lc", type=float, default=1e4,
@@ -230,7 +230,7 @@ def train(args):
 def forward(frame1, frame2, model, warm_up, patch_size=None):
     n, c, h, w = frame1.size()
     if warm_up:
-        output = model(frame1, frame2)
+        output = model(frame1, frame2, patch_size=[patch_size // 8, patch_size // 8])
     else:
         output = model(frame1, frame2, warm_up=False,
                        patch_size=[patch_size // 8, patch_size // 8])
@@ -265,7 +265,15 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
         frame2_var = frames[1].cuda()
 
         if epoch < args.wepoch:
-            output = forward(frame1_var, frame2_var, model, warm_up=True)
+            output = forward(frame1_var, frame2_var, model, warm_up=True, patch_size=args.patch_size)
+            img_size = frame1_var.size(2)
+            if img_size > args.patch_size:
+                center = img_size // 2
+                half_patch_size = args.patch_size // 2
+                frame1_var = frame1_var[..., center - half_patch_size:center - half_patch_size + args.patch_size,
+                             center - half_patch_size:center - half_patch_size + args.patch_size]
+                frame2_var = frame2_var[..., center - half_patch_size:center - half_patch_size + args.patch_size,
+                             center - half_patch_size:center - half_patch_size + args.patch_size]
             color2_est = output[0]
             aff = output[1]
             b, x, _ = aff.size()
@@ -283,11 +291,17 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             else:
                 loss = loss_
             if (i % args.log_interval == 0):
-                save_vis(color2_est, frame2_var, frame1_var,
+                save_vis(i, color2_est, frame2_var, frame1_var,
                          frame2_var, args.savepatch)
         else:
             output = forward(frame1_var, frame2_var, model,
                              warm_up=False, patch_size=args.patch_size)
+            img_size = frame1_var.size(2)
+            if img_size > args.patch_size:
+                center = img_size // 2
+                half_patch_size = args.patch_size // 2
+                frame1_var = frame1_var[..., center - half_patch_size:center - half_patch_size + args.patch_size,
+                             center - half_patch_size:center - half_patch_size + args.patch_size]
             color2_est = output[0]
             aff = output[1]
             new_c = output[2]
@@ -322,7 +336,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
                 loss = loss_
 
             if (i % args.log_interval == 0):
-                save_vis(color2_est, color2_crop, frame1_var,
+                save_vis(i, color2_est, color2_crop, frame1_var,
                          frame2_var, args.savepatch, new_c)
 
         losses.update(loss.item(), frame1_var.size(0))
@@ -353,8 +367,8 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             best_loss = min(losses.avg, best_loss)
             checkpoint_path = os.path.join(
                 args.savedir, 'vhr_orig_checkpoint_latest.pth.tar')
-            if not args.mmultiGPU:
-                save_model=torch.nn.DataParallel(model).cuda()
+            if not args.multiGPU:
+                save_model = torch.nn.DataParallel(model).cuda()
             save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': save_model.state_dict(),

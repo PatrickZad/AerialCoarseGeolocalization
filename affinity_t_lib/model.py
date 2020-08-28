@@ -20,14 +20,14 @@ def transform(aff, frame1, target_h=None, target_w=None):
         target_h = h
     if target_w is None:
         target_w = w
-    frame1 = frame1.view(b, c, -1)
+    frame1 = frame1.reshape((b, c, -1))
     try:
         frame2 = torch.bmm(frame1, aff)
     except Exception as e:
         print(e)
         print(frame1.size())
         print(aff.size())
-    return frame2.view(b, c, target_h, target_w)
+    return frame2.reshape((b, c, target_h, target_w))
 
 
 class normalize(nn.Module):
@@ -151,15 +151,29 @@ class track_match_comb(nn.Module):
         f_ref_size = Fgray1.size(2)
         if f_ref_size > patch_size[0]:
             center = f_ref_size // 2
-            half_patch_size = patch_size // 2
-            Fgray1 = Fgray1[..., center - half_patch_size:center - half_patch_size + patch_size[0],
-                     center - half_patch_size:center - half_patch_size + patch_size[0]]
-            Fcolor1 = Fcolor1[..., center - half_patch_size:center - half_patch_size + patch_size[0],
-                      center - half_patch_size:center - half_patch_size + patch_size[0]]
+            half_patch_size = patch_size[0] // 2
+            bbox = torch.tensor(
+                [center - half_patch_size, center - half_patch_size, center - half_patch_size + patch_size[0],
+                 center - half_patch_size + patch_size[0]], dtype=torch.float).cuda()
+            bbox = bbox.repeat(Fgray1.size(0), 1)
+            Fgray1 = diff_crop(Fgray1, bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3],
+                               patch_size[1], patch_size[0])
+            Fcolor1 = diff_crop(Fcolor1, bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3],
+                                patch_size[1], patch_size[0])
 
         output = []
 
         if warm_up:
+            f_tar_size = Fgray2.size(2)
+            if f_tar_size > patch_size[0]:
+                center = f_ref_size // 2
+                half_patch_size = patch_size[0] // 2
+                bbox = torch.tensor(
+                    [center - half_patch_size, center - half_patch_size, center - half_patch_size + patch_size[0],
+                     center - half_patch_size + patch_size[0]], dtype=torch.float).cuda()
+                bbox = bbox.repeat(Fgray2.size(0), 1)
+                Fgray2 = diff_crop(Fgray2, bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3],
+                                   patch_size[1], patch_size[0])
             aff = self.nlm(Fgray1, Fgray2)
             aff_norm = self.softmax(aff)
             Fcolor2_est = transform(aff_norm, Fcolor1)
@@ -170,6 +184,16 @@ class track_match_comb(nn.Module):
 
             if self.color_switch:
                 Fcolor2 = self.rgb_encoder(img_tar)
+                f_tar_size = Fcolor2.size(2)
+                if f_tar_size > patch_size[0]:
+                    center = f_ref_size // 2
+                    half_patch_size = patch_size[0] // 2
+                    bbox = torch.tensor(
+                        [center - half_patch_size, center - half_patch_size, center - half_patch_size + patch_size[0],
+                         center - half_patch_size + patch_size[0]],dtype=torch.float).cuda()
+                    bbox = bbox.repeat(Fcolor2.size(0),1)
+                    Fcolor2 = diff_crop(Fcolor2, bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3],
+                                        patch_size[1], patch_size[0])
                 # correct aff-softmax
                 Fcolor1_est = transform(self.softmax(aff.transpose(1, 2)), Fcolor2)
                 color1_est = self.decoder(Fcolor1_est)

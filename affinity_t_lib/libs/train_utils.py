@@ -26,7 +26,7 @@ def draw_bbox(img,bbox):
 	return img
 
 
-def save_vis(pred2, gt2, frame1, frame2, savedir, new_c=None):
+def save_vis(id,pred2, gt2, frame1, frame2, savedir, new_c=None):
 	"""
 	INPUTS:
 	 - pred: predicted patch, a 3xpatch_sizexpatch_size tensor
@@ -61,10 +61,10 @@ def save_vis(pred2, gt2, frame1, frame2, savedir, new_c=None):
 			im_frame2 = cv2.resize(im_frame2, (im_frame1.shape[0],im_frame1.shape[1]))
 			
 			im = np.concatenate((im_frame1, im_frame2), axis = 1)
-			cv2.imwrite(os.path.join(savedir, "{:02d}_loc.png".format(cnt)), im)
+			cv2.imwrite(os.path.join(savedir, str(id)+"_{:02d}_loc.png".format(cnt)), im)
 
 		im = np.concatenate((im_frame1, im_pred, im_gt2), axis = 1)
-		cv2.imwrite(os.path.join(savedir, "{:02d}_patch.png".format(cnt)), im)
+		cv2.imwrite(os.path.join(savedir, str(id)+"_{:02d}_patch.png".format(cnt)), im)
 		
 
 def save_vis_ae(pred, gt, savepath):

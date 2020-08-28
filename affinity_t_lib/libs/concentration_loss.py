@@ -138,7 +138,7 @@ class ConcentrationSwitchLoss(nn.Module):
         # aff here is not processed by softmax
         b, c, h, w = self.F_size
         if aff.dim() == 4:
-            aff = torch.squeeze(aff)
+            aff = torch.squeeze(aff, dim=1)
         # b * 2 * h * w
         coord1 = aff2coord(self.F_size, self.grid, aff, self.temp, softmax=self.softmax)
         coord2 = aff2coord(self.F_size, self.grid, aff.permute(0, 2, 1), self.temp, softmax=self.softmax)
