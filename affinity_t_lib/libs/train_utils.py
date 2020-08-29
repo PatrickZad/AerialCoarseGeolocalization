@@ -57,10 +57,13 @@ def save_vis(id, pred2, gt2, frame1, frame2, savedir, new_c=None):
         if new_c is not None:
             new_bbox = new_c[cnt]
             im_frame2 = draw_bbox(im_frame2, new_bbox)
-            im_frame2 = cv2.resize(im_frame2, (im_frame1.shape[0], im_frame1.shape[1]))
-
-            im = np.concatenate((im_frame1, im_frame2), axis=1)
-            cv2.imwrite(os.path.join(savedir, str(id) + "_{:02d}_loc.png".format(cnt)), im)
+            cat_img = np.zeros((im_frame2.shape[0], im_frame1.shape[1] + im_frame2.shape[1], im_frame2.shape[2]))
+            cat_img = cat_img.astype(np.uint8)
+            cat_img[:im_frame1.shape[0], :im_frame1.shape[1], :] = im_frame1
+            cat_img[:im_frame2.shape[0], im_frame1.shape[1]:, :] = im_frame2
+            # im_frame2 = cv2.resize(im_frame2, (im_frame1.shape[0], im_frame1.shape[1]))
+            # im = np.concatenate((im_frame1, im_frame2), axis=1)
+            cv2.imwrite(os.path.join(savedir, str(id) + "_{:02d}_loc.png".format(cnt)), cat_img)
 
         im = np.concatenate((im_frame1, im_pred, im_gt2), axis=1)
         cv2.imwrite(os.path.join(savedir, str(id) + "_{:02d}_patch.png".format(cnt)), im)
