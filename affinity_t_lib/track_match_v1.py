@@ -21,7 +21,7 @@ from affinity_t_lib.libs.concentration_loss import ConcentrationSwitchLoss as Co
 from affinity_t_lib.libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current
 from affinity_t_lib.libs.utils import diff_crop  # , diff_crop_by_assembled_grid
 
-from data.dataset import SenseflyTransTrain, SenseflyTransVal, getVHRRemoteDataRandomCropper
+from data.dataset import SenseflyTransTrain, SenseflyTransVal, getVHRRemoteDataRandomCropper, getVHRRemoteDataAugCropper
 
 FORMAT = "[%(asctime)-15s %(filename)s:%(lineno)d %(funcName)s] %(message)s"
 logging.basicConfig(format=FORMAT)
@@ -75,6 +75,8 @@ def parse_args():
 
     parser.add_argument("--scale-modeling", dest='estimate_scale', action='store_const', const=True, default=False,
                         help="do scale modeling or not")
+    parser.add_argument("--rand_aug", dest='rand_aug', action='store_const', const=True, default=False,
+                        help="data augmentation for training")
 
     # set epoches
     parser.add_argument("--wepoch", type=int, default=10, help='warmup epoch')
@@ -154,7 +156,10 @@ def create_loader(args):
                               args.window_len, args.rotate, args.scale, args.full_size)'''
     # dataset_train_warm = SenseflyTransTrain(crop_size=args.patch_size)
     # dataset_train = SenseflyTransTrain(crop_size=args.patch_size)
-    dataset_train_warm, dataset_train, dataset_val = getVHRRemoteDataRandomCropper()
+    if args.rand_aug:
+        dataset_train_warm, dataset_train, dataset_val = getVHRRemoteDataAugCropper()
+    else:
+        dataset_train_warm, dataset_train, dataset_val = getVHRRemoteDataRandomCropper()
     if args.multiGPU:
         train_loader_warm = torch.utils.data.DataLoader(
             dataset_train_warm, batch_size=args.batchsize, shuffle=True, num_workers=args.workers, pin_memory=True,
@@ -177,7 +182,8 @@ def train(args):
     start_epoch = 0
 
     model = Model(args.pretrainRes, args.encoder_dir, args.decoder_dir, temp=args.temp,
-                  Resnet=args.Resnet, color_switch=args.color_switch_flag, coord_switch=args.coord_switch_flag)
+                  Resnet=args.Resnet, color_switch=args.color_switch_flag, coord_switch=args.coord_switch_flag,
+                  model_scale=args.estimate_scale)
     if args.multiGPU:
         model = torch.nn.DataParallel(model).cuda()
         closs = ConcentrationLoss(win_len=args.lc_win, stride=args.lc_win,
@@ -292,7 +298,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
                 loss = loss_
             if (i % args.log_interval == 0):
                 save_vis(i, color2_est, frame2_var, frame1_var,
-                         frame2_var, args.savepatch)
+                         frame2_var, os.path.join(args.savepatch, 'warm'))
         else:
             output = forward(frame1_var, frame2_var, model,
                              warm_up=False, patch_size=args.patch_size)
@@ -337,7 +343,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 
             if (i % args.log_interval == 0):
                 save_vis(i, color2_est, color2_crop, frame1_var,
-                         frame2_var, args.savepatch, new_c)
+                         frame2_var, os.path.join(args.savepatch, 'train'), new_c)
 
         losses.update(loss.item(), frame1_var.size(0))
         optimizer.zero_grad()
@@ -383,4 +389,4 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 if __name__ == '__main__':
     args = parse_args()
     train(args)
-    #writer.close()
+    # writer.close()

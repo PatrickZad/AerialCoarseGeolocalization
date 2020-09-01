@@ -169,6 +169,29 @@ class RemoteDataReader:
 
 
 aug_methods = ['scale', 'rotate', 'tilt', 'erase']
+aug_light = {'scale': 1.5, 'rotate': 60}
+aug_mid = {'scale': 2, 'rotate': 100, 'erase': (0.5, 0.01, 0.02, 0.6)}
+aug_heavy = {'scale': 3, 'rotate': 120, 'erase': (0.7, 0.02, 0.05, 0.3), 'tilt': 0.1}
+
+
+def rand(a=0, b=1, size=None):
+    if size is not None:
+        return np.random.rand(*size) * (b - a) + a
+    else:
+        return np.random.rand() * (b - a) + a
+
+
+def sk_warpcrop(img, homo_mat, warpcrop_box):
+    warpped_img = transform.warp(img, homo_mat)
+    crop = warpped_img[warpcrop_box[1]:warpcrop_box[1] + warpcrop_box[3],
+           warpcrop_box[0]:warpcrop_box[0] + warpcrop_box[2], :].copy()
+    crop_h, crop_w = crop.shape[0], crop.shape[1]
+    if crop_h != warpcrop_box[3] or crop_w != warpcrop_box[2]:
+        print('Regenerate random patch !')
+        return None
+    crop = crop * 255
+    crop = crop.astype(np.uint8)
+    return crop
 
 
 class VHRRemoteDataReader:
@@ -248,54 +271,120 @@ class VHRRemoteDataReader:
     def img_name(self, idx):
         return self._files[idx]
 
-    def read_item(self, idx, map_size=1024, crop_size=256):
-
-        origin_img = cv.imread(os.path.join(
-            self._dir, self._files[idx]))
-        origin_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
-        oh, ow = origin_img.shape[:2]
-        map_size_r = (map_size, map_size / ow * oh) if ow > oh else (map_size / oh * ow, map_size)
-        map_arr = cv.resize(origin_img, (int(map_size_r[0]), int(map_size_r[1])))
+    def _rand_crop(self, map_arr, crop_size=256):
         h, w = map_arr.shape[:2]
-        background = np.zeros((map_size, map_size, 3))
-        background = background.astype(np.uint8)
-        diff = map_size - map_arr.shape[0] if map_arr.shape[0] < map_arr.shape[1] else map_size - \
-                                                                                       map_arr.shape[1]
-        offset = diff // 2
-        if map_arr.shape[0] < map_arr.shape[1]:
-            background[offset:offset + map_arr.shape[0], :map_arr.shape[1], :] = map_arr
-        else:
-            background[:map_arr.shape[0], offset:offset + map_arr.shape[1], :] = map_arr
-
-        # crop_size = (min(h, w) * scale // 8 + 1) * 8
-
         offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
         offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
         crop = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
-        return crop, background
+        return crop
 
-    def crop_pair(self, idx, map_size=1024, crop_size=256):
+    def _read_rgb(self, idx):
         origin_img = cv.imread(os.path.join(
             self._dir, self._files[idx]))
-        origin_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
+        rgb_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
+        return rgb_img
+
+    def _resize_keep_ratio(self, origin_img, long_size):
         oh, ow = origin_img.shape[:2]
-        map_size_r = (map_size, map_size / ow * oh) if ow > oh else (map_size / oh * ow, map_size)
-        map_arr = cv.resize(origin_img, (int(map_size_r[0]), int(map_size_r[1])))
+        img_size_r = (long_size, long_size / ow * oh) if ow > oh else (long_size / oh * ow, long_size)
+        resized_arr = cv.resize(origin_img, (int(img_size_r[0]), int(img_size_r[1])))
+        return resized_arr
+
+    def _square_padding(self, img):
+        square_size = max(img.shape[0], img.shape[1])
+        background = np.zeros((square_size, square_size, 3))
+        background = background.astype(np.uint8)
+        diff = square_size - img.shape[0] if img.shape[0] < img.shape[1] \
+            else square_size - img.shape[1]
+        offset = diff // 2
+        if img.shape[0] < img.shape[1]:
+            background[offset:offset + img.shape[0], :img.shape[1], :] = img
+        else:
+            background[:img.shape[0], offset:offset + img.shape[1], :] = img
+        return background
+
+    def read_item(self, idx, map_size=1024, crop_size=256, aug_options=None):
+        if aug_options is not None:
+            return self._aug_pair(idx, aug_options, map_size, crop_size)
+        origin_img = self._read_rgb(idx)
+        map_arr = self._resize_keep_ratio(origin_img, map_size)
+        background = self._square_padding(map_arr)
+        crop = self._rand_crop(map_arr, crop_size)
+        return crop, background
+
+    def crop_pair(self, idx, map_size=1024, crop_size=256, pertube=None):
+        if pertube is not None:
+            return self._rand_aug_crop_pair(idx, map_size, crop_size, pertube)
+        origin_img = self._read_rgb(idx)
+        map_arr = self._resize_keep_ratio(origin_img, map_size)
         h, w = map_arr.shape[:2]
         offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
         offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
         crop1 = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
-        offset_x2, offset_y2 = map_size_r
-        while offset_x + offset_x2 + crop_size > map_size_r[0] or offset_y + offset_y2 + crop_size > map_size_r[1]:
+        offset_x2, offset_y2 = map_arr.shape[1], map_arr.shape[0]
+        while offset_x + offset_x2 + crop_size > map_arr.shape[1] or offset_y + offset_y2 + crop_size > map_arr.shape[
+            0]:
             offset_x2 = np.random.randint(max(int(-0.3 * crop_size), -offset_x), int(0.3 * crop_size))
             offset_y2 = np.random.randint(max(int(-0.3 * crop_size), -offset_y), int(0.3 * crop_size))
         crop2 = map_arr[offset_y + offset_y2:offset_y + offset_y2 + crop_size,
                 offset_x + offset_x2:offset_x + offset_x2 + crop_size, :].copy()
         return crop1, crop2
 
-    def __next__(self):
-        if self._next == self._lenth:
-            raise StopIteration
+    def _rand_aug_crop_pair(self, idx, map_size=1024, crop_size=256, pertube=32):
+        origin_img = self._read_rgb(idx)
+        map_arr = self._resize_keep_ratio(origin_img, map_size)
+        h, w = map_arr.shape[:2]
+        offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
+        offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
+        crop1 = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
+        offset_x2, offset_y2 = map_arr.shape[1], map_arr.shape[0]
+        while offset_x + offset_x2 + crop_size > map_arr.shape[1] or \
+                offset_y + offset_y2 + crop_size > map_arr.shape[0]:
+            offset_x2 = np.random.randint(max(int(-0.3 * crop_size), -offset_x), int(0.3 * crop_size))
+            offset_y2 = np.random.randint(max(int(-0.3 * crop_size), -offset_y), int(0.3 * crop_size))
+        offset_box = (offset_x + offset_x2, offset_y + offset_y2, offset_x + offset_x2 + crop_size - 1,
+                      offset_y + offset_y2 + crop_size - 1)  # left,top,right,bottom
+        h_ab_4p = np.array([(rand(max(-offset_box[0], -pertube), min(pertube, map_arr.shape[1] - offset_box[0])),
+                             rand(max(-offset_box[1], -pertube), min(pertube, map_arr.shape[0] - offset_box[1]))),
+                            (rand(max(-offset_box[2], -pertube), min(pertube, map_arr.shape[1] - offset_box[2])),
+                             rand(max(-offset_box[1], -pertube), min(pertube, map_arr.shape[0] - offset_box[1]))),
+                            (rand(max(-offset_box[2], -pertube), min(pertube, map_arr.shape[1] - offset_box[2])),
+                             rand(max(-offset_box[3], -pertube), min(pertube, map_arr.shape[0] - offset_box[3]))),
+                            (rand(max(-offset_box[0], -pertube), min(pertube, map_arr.shape[1] - offset_box[0])),
+                             rand(max(-offset_box[3], -pertube), min(pertube, map_arr.shape[0] - offset_box[3]))),
+                            ])
+        corners_1 = np.array([(offset_box[0], offset_box[1]), (offset_box[2], offset_box[1]),
+                              (offset_box[2], offset_box[3]), (offset_box[0], offset_box[3])])
+        corners_2 = corners_1 + h_ab_4p
+        h_ab = (transform.estimate_transform('projective', corners_1, corners_2)).params
+        h_ab = h_ab / h_ab[2][2]
+        h_ba = np.linalg.inv(h_ab)
+        # patch_1 = map_arr[offset_box[1]:offset_box[3] + 1, offset_box[0]:offset_box[2] + 1, :].copy()
+        crop2 = sk_warpcrop(map_arr, h_ba, (offset_box[0], offset_box[1], crop_size, crop_size))
+        return crop1, crop2
+
+    def _aug_pair(self, idx, aug_options, map_size=1024, crop_size=256):
+        # TODO random tilt
+        origin_img = self._read_rgb(idx)
+        map_arr = self._resize_keep_ratio(origin_img, map_size)
+        if 'scale' in aug_options.keys():
+            scale_factor = rand(1, aug_options['scale'])
+            scaled_img = cv.resize(map_arr, dsize=(0, 0), fx=scale_factor, fy=scale_factor)
+            crop = self._rand_crop(scaled_img, crop_size)
+        else:
+            crop = self._rand_crop(map_arr, crop_size)
+        if 'rotate' in aug_options.keys():
+            rot = rand(-1, 1) * aug_options['rotate']
+            if rot < 0:
+                rot += 360
+            map_arr, _ = data_aug.adaptive_rot(map_arr, random=False, rot=rot)
+            map_arr = self._resize_keep_ratio(map_arr, map_size)
+        if 'erase' in aug_options.keys():
+            crop = data_aug.rand_erase(crop, *aug_options['erase'])
+        map_arr = self._square_padding(map_arr)
+        return crop, map_arr
+
+    def __next__(self, idx, aug_options):
         origin_img = cv.imread(os.path.join(
             self._dir, self._files[self._next]))
         origin_img = cv.cvtColor(origin_img, cv.COLOR_BGR2RGB)
@@ -373,19 +462,21 @@ class VHRRemoteDataReader:
 
 
 class VHRRemoteDataset(Dataset):
-    def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size):
+    def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size, aug_options=None, pertube=None):
         self._data_reader = data_reader
         self._crop_size = crop_size
         self._map_size = map_size
+        self._aug_options = aug_options
+        self._pertube = pertube
 
     def __len__(self):
         return self._data_reader.__len__()
 
     def __getitem__(self, item, return_rgb=False, return_pair=False):
         if return_pair:
-            ref, tar = self._data_reader.crop_pair(item, self._map_size, self._crop_size)
+            ref, tar = self._data_reader.crop_pair(item, self._map_size, self._crop_size, self._pertube)
         else:
-            ref, tar = self._data_reader.read_item(item, self._map_size, self._crop_size)
+            ref, tar = self._data_reader.read_item(item, self._map_size, self._crop_size, self._aug_options)
         ref = cv.cvtColor(ref, cv.COLOR_RGB2LAB)
         tar = cv.cvtColor(tar, cv.COLOR_RGB2LAB)
         tar_t = torch.from_numpy(tar.transpose(2, 0, 1).copy()).contiguous().float()
@@ -420,8 +511,8 @@ class VHRRemoteVal(VHRRemoteDataset):
 
 
 class VHRRemoteWarm(VHRRemoteDataset):
-    def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size):
-        super(VHRRemoteWarm, self).__init__(data_reader, crop_size, map_size)
+    def __init__(self, data_reader: VHRRemoteDataReader, crop_size, map_size, pertube=None):
+        super(VHRRemoteWarm, self).__init__(data_reader, crop_size, map_size, pertube=pertube)
 
     def __getitem__(self, item):
         ref_t, tar_t = super(VHRRemoteWarm, self).__getitem__(item, return_pair=True)
@@ -447,6 +538,29 @@ def getVHRRemoteDataRandomCropper(crop_size=288, map_size=1024, proportion=(0.8,
     val = VHRRemoteDataReader(dir, part3, aug)
 
     return VHRRemoteWarm(warm, crop_size, map_size), VHRRemoteDataset(train, crop_size, map_size), \
+           VHRRemoteVal(val, crop_size, map_size)
+
+
+def getVHRRemoteDataAugCropper(crop_size=288, map_size=1024, proportion=(0.8, 0.8, 0.2), aug=aug_light, pertube=96):
+    # TODO rand val
+    # warm,train,val
+    dir = os.path.join(dataset_common_dir, 'VHR Remote Sensing')
+    dir_files = os.listdir(dir)
+    length = len(dir_files)
+    len1 = int(length * proportion[0])
+    len2 = int(length * proportion[1])
+    len3 = int(length * proportion[2])
+    np.random.shuffle(dir_files)
+    part1 = dir_files[:len1]
+    np.random.shuffle(dir_files)
+    part2 = dir_files[:len2]
+    np.random.shuffle(dir_files)
+    part3 = dir_files[:len3]
+    warm = VHRRemoteDataReader(dir, part1, aug)
+    train = VHRRemoteDataReader(dir, part2, aug)
+    val = VHRRemoteDataReader(dir, part3, aug)
+
+    return VHRRemoteWarm(warm, crop_size, map_size, pertube), VHRRemoteDataset(train, crop_size, map_size, aug_light), \
            VHRRemoteVal(val, crop_size, map_size)
 
 
