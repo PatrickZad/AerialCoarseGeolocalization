@@ -26,6 +26,38 @@ def draw_bbox(img, bbox):
     return img
 
 
+def fcoord2imgcoord_center(fcoord, samp=8):
+    y = fcoord[0] * samp + samp // 2
+    x = fcoord[1] * samp + samp // 2
+    return x, y
+
+
+def cv_point(pt, orientation=0):
+    point = cv2.KeyPoint()
+    point.size = 17
+    point.angle = orientation
+    point.class_id = -1
+    point.octave = 0
+    point.response = 0
+    point.pt = (pt[0], pt[1])
+    return point
+
+
+def cv_match(qidx, tidx, dist=0., img_idx=0):
+    match = cv2.DMatch(qidx, tidx, img_idx, dist)
+    return match
+
+
+def draw_matches(img1, img2, f1_coords, f2_coords, upsamp_factor=8):
+    img1_coords = [cv_point(fcoord2imgcoord_center(f1_coords[idx], upsamp_factor)) for idx in range(f1_coords.shape[0])]
+    img2_coords = [cv_point(fcoord2imgcoord_center(f2_coords[idx], upsamp_factor)) for idx in range(f2_coords.shape[0])]
+    cv_matches = [cv_match(i, i) for i in range(len(f1_coords))]
+    match_result = np.zeros((max(img1.shape[0], img2.shape[0]), img1.shape[1] + img2.shape[1], 3))
+    cv2.drawMatches(img1, img1_coords, img2, img2_coords,
+                    cv_matches, match_result, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    return match_result
+
+
 def save_vis(id, pred2, gt2, frame1, frame2, savedir, coords=None, new_c=None):
     """
     INPUTS:
@@ -67,7 +99,20 @@ def save_vis(id, pred2, gt2, frame1, frame2, savedir, coords=None, new_c=None):
             # im_frame2 = cv2.resize(im_frame2, (im_frame1.shape[0], im_frame1.shape[1]))
             # im = np.concatenate((im_frame1, im_frame2), axis=1)
 
-
+            coord_img = coords[cnt].cpu().detach().numpy()
+            frame1_size = frame1.size(-1)
+            frame1_f_grid_x = np.arange(0, frame1_size).reshape((1, -1))
+            frame1_f_grid_y = frame1_f_grid_x.reshape((-1, 1))
+            frame1_f_grid_x = np.repeat(frame1_f_grid_x, frame1_size, axis=0)
+            frame1_f_grid_y = np.repeat(frame1_f_grid_y, frame1_size, axis=1)
+            frame1_f_grid = np.concatenate([frame1_f_grid_x, frame1_f_grid_y], axis=-1)
+            frame1_f_grid_flat = frame1_f_grid.reshape((-1, 2))
+            dsamp_mask = np.zeros(frame1_f_grid_x.shape[:2]) != 0
+            dsamp_mask[::4, ::4] = True
+            dsamp_mask_flat = dsamp_mask.reshape((-1,))
+            frame1_f_coords = frame1_f_grid_flat[dsamp_mask_flat]
+            estimate_coords = coord_img[dsamp_mask_flat]
+            match_img = draw_matches(im_frame1, im_frame2, frame1_f_coords, estimate_coords, upsamp_factor=8)
 
             cv2.imwrite(os.path.join(savedir, str(id) + "_{:02d}_loc.png".format(cnt)), cat_img)
 

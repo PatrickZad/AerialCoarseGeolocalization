@@ -397,13 +397,25 @@ if __name__ == '__main__':
     aug_3 = {'scale': 1.5, 'rotate': 60}
     expr_4_dir = os.path.join(origin_save_dir, 'aug_mid')
     aug_4 = {'scale': 2, 'rotate': 100, 'erase': (0.5, 0.01, 0.02, 0.6)}
+
     args.savepatch = expr_1_dir
     train(args, aug_1)
+    args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    train(args, aug_1)
+
     args.savepatch = expr_2_dir
     train(args, aug_2)
+    args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    train(args, aug_2)
+
     args.savepatch = expr_3_dir
     train(args, aug_3)
+    args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    train(args, aug_3)
+
     args.savepatch = expr_4_dir
+    train(args, aug_4)
+    args.savepatch = os.path.join(args.savepatch, 'no_warm')
     train(args, aug_4)
 
     # writer.close()
