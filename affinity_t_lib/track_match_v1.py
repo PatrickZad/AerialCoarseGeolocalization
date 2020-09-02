@@ -149,7 +149,7 @@ def adjust_learning_rate(args, optimizer, epoch):
     return lr
 
 
-def create_loader(args):
+def create_loader(args, aug_options):
     '''dataset_train_warm = VidListv1(
         args.videoRoot, args.videoList, args.patch_size, args.rotate, args.scale)
     dataset_train = VidListv2(args.videoRoot, args.videoList, args.patch_size,
@@ -157,7 +157,7 @@ def create_loader(args):
     # dataset_train_warm = SenseflyTransTrain(crop_size=args.patch_size)
     # dataset_train = SenseflyTransTrain(crop_size=args.patch_size)
     if args.rand_aug:
-        dataset_train_warm, dataset_train, dataset_val = getVHRRemoteDataAugCropper()
+        dataset_train_warm, dataset_train, dataset_val = getVHRRemoteDataAugCropper(aug=aug_options)
     else:
         dataset_train_warm, dataset_train, dataset_val = getVHRRemoteDataRandomCropper()
     if args.multiGPU:
@@ -175,8 +175,8 @@ def create_loader(args):
     return train_loader_warm, train_loader
 
 
-def train(args):
-    loader_warm, loader = create_loader(args)
+def train(args, aug_ops):
+    loader_warm, loader = create_loader(args, aug_ops)
     cudnn.benchmark = True
     best_loss = 1e10
     start_epoch = 0
@@ -298,7 +298,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
                 loss = loss_
             if (i % args.log_interval == 0):
                 save_vis(i, color2_est, frame2_var, frame1_var,
-                         frame2_var, os.path.join(args.savepatch, 'warm'))
+                         frame2_var, os.path.join(args.savepatch, 'warm', str(epoch)))
         else:
             output = forward(frame1_var, frame2_var, model,
                              warm_up=False, patch_size=args.patch_size)
@@ -343,7 +343,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 
             if (i % args.log_interval == 0):
                 save_vis(i, color2_est, color2_crop, frame1_var,
-                         frame2_var, os.path.join(args.savepatch, 'train'), new_c)
+                         frame2_var, os.path.join(args.savepatch, 'train', str(epoch)), new_c)
 
         losses.update(loss.item(), frame1_var.size(0))
         optimizer.zero_grad()
@@ -388,5 +388,22 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 
 if __name__ == '__main__':
     args = parse_args()
-    train(args)
+    origin_save_dir = args.savepatch
+    expr_1_dir = os.path.join(origin_save_dir, 'scale_only')
+    aug_1 = {'scale': 2}
+    expr_2_dir = os.path.join(origin_save_dir, 'rot_only')
+    aug_2 = {'rotate': 100}
+    expr_3_dir = os.path.join(origin_save_dir, 'aug_light')
+    aug_3 = {'scale': 1.5, 'rotate': 60}
+    expr_4_dir = os.path.join(origin_save_dir, 'aug_mid')
+    aug_4 = {'scale': 2, 'rotate': 100, 'erase': (0.5, 0.01, 0.02, 0.6)}
+    args.savepatch = expr_1_dir
+    train(args, aug_1)
+    args.savepatch = expr_2_dir
+    train(args, aug_2)
+    args.savepatch = expr_3_dir
+    train(args, aug_3)
+    args.savepatch = expr_4_dir
+    train(args, aug_4)
+
     # writer.close()

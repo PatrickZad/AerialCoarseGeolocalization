@@ -190,8 +190,8 @@ class track_match_comb(nn.Module):
                     half_patch_size = patch_size[0] // 2
                     bbox = torch.tensor(
                         [center - half_patch_size, center - half_patch_size, center - half_patch_size + patch_size[0],
-                         center - half_patch_size + patch_size[0]],dtype=torch.float).cuda()
-                    bbox = bbox.repeat(Fcolor2.size(0),1)
+                         center - half_patch_size + patch_size[0]], dtype=torch.float).cuda()
+                    bbox = bbox.repeat(Fcolor2.size(0), 1)
                     Fcolor2 = diff_crop(Fcolor2, bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3],
                                         patch_size[1], patch_size[0])
                 # correct aff-softmax
@@ -201,8 +201,8 @@ class track_match_comb(nn.Module):
         else:
             if (self.grid_flat is None):
                 self.grid_flat = create_flat_grid(Fgray2.size())
-            aff_ref_tar = self.nlm(Fgray1, Fgray2)
-            aff_ref_tar = torch.nn.functional.softmax(aff_ref_tar * self.temp, dim=2)
+            aff_ref_tar_o = self.nlm(Fgray1, Fgray2)
+            aff_ref_tar = torch.nn.functional.softmax(aff_ref_tar_o * self.temp, dim=2)
             coords = torch.bmm(aff_ref_tar, self.grid_flat)
 
             if not self.model_scale:

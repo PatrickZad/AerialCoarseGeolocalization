@@ -29,7 +29,6 @@ def adaptive_rot(img_array, random=True, rot=None):
     corners = rot_corners + translation
     mat[0, -1], mat[1, -1] = -x, -y
     rot_img = cv2.warpPerspective(img_array, mat, (w, h))
-    cv2.imwrite('./rot.jpg', rot_img)
     return rot_img, corners
 
 

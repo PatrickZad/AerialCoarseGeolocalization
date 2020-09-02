@@ -26,7 +26,7 @@ def draw_bbox(img, bbox):
     return img
 
 
-def save_vis(id, pred2, gt2, frame1, frame2, savedir, new_c=None):
+def save_vis(id, pred2, gt2, frame1, frame2, savedir, coords=None, new_c=None):
     """
     INPUTS:
      - pred: predicted patch, a 3xpatch_sizexpatch_size tensor
@@ -34,6 +34,9 @@ def save_vis(id, pred2, gt2, frame1, frame2, savedir, new_c=None):
      - gt1: first GT frame, a 3xhxw tensor
      - gt_grey: whether to use ground trught L channel in predicted image
     """
+    if not os.path.exists(savedir):
+        os.makedirs(savedir)
+
     b = pred2.size(0)
     pred2 = pred2 * 128 + 128
     gt2 = gt2 * 128 + 128
@@ -63,6 +66,9 @@ def save_vis(id, pred2, gt2, frame1, frame2, savedir, new_c=None):
             cat_img[:im_frame2.shape[0], im_frame1.shape[1]:, :] = im_frame2
             # im_frame2 = cv2.resize(im_frame2, (im_frame1.shape[0], im_frame1.shape[1]))
             # im = np.concatenate((im_frame1, im_frame2), axis=1)
+
+
+
             cv2.imwrite(os.path.join(savedir, str(id) + "_{:02d}_loc.png".format(cnt)), cat_img)
 
         im = np.concatenate((im_frame1, im_pred, im_gt2), axis=1)

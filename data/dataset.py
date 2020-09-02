@@ -541,7 +541,7 @@ def getVHRRemoteDataRandomCropper(crop_size=288, map_size=1024, proportion=(0.8,
            VHRRemoteVal(val, crop_size, map_size)
 
 
-def getVHRRemoteDataAugCropper(crop_size=288, map_size=1024, proportion=(0.8, 0.8, 0.2), aug=aug_light, pertube=96):
+def getVHRRemoteDataAugCropper(crop_size=288, map_size=1024, proportion=(0.8, 0.8, 0.2), aug=aug_light, pertube=64):
     # TODO rand val
     # warm,train,val
     dir = os.path.join(dataset_common_dir, 'VHR Remote Sensing')
