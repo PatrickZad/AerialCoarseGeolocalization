@@ -77,6 +77,8 @@ def parse_args():
                         help="do scale modeling or not")
     parser.add_argument("--rand_aug", dest='rand_aug', action='store_const', const=True, default=False,
                         help="data augmentation for training")
+    parser.add_argument("--strict_orth", dest='orth', action='store_const', const=True, default=False,
+                        help="data augmentation for training")
 
     # set epoches
     parser.add_argument("--wepoch", type=int, default=10, help='warmup epoch')
@@ -233,13 +235,13 @@ def train(args, aug_ops):
                                    closs, optimizer, epoch, best_loss)
 
 
-def forward(frame1, frame2, model, warm_up, patch_size=None):
+def forward(frame1, frame2, model, warm_up, args, patch_size=None):
     n, c, h, w = frame1.size()
     if warm_up:
-        output = model(frame1, frame2, patch_size=[patch_size // 8, patch_size // 8])
+        output = model(frame1, frame2, patch_size=[patch_size // 8, patch_size // 8], strict_orth=args.orth)
     else:
         output = model(frame1, frame2, warm_up=False,
-                       patch_size=[patch_size // 8, patch_size // 8])
+                       patch_size=[patch_size // 8, patch_size // 8], strict_orth=args.orth)
         bbox = output[2][0]
         # gt patch
         # print("HERE2: ", frame2.size(), new_c, patch_size)
@@ -274,7 +276,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
         frame2_var = frames[1].cuda()
 
         if epoch < args.wepoch:
-            output = forward(frame1_var, frame2_var, model, warm_up=True, patch_size=args.patch_size)
+            output = forward(frame1_var, frame2_var, model, warm_up=True, args=args, patch_size=args.patch_size)
             img_size = frame1_var.size(2)
             if img_size > args.patch_size:
                 center = img_size // 2
@@ -304,7 +306,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
                          frame2_var, os.path.join(args.savepatch, 'warm', str(epoch)))
         else:
             corners_gt = frames[-1]
-            output = forward(frame1_var, frame2_var, model,
+            output = forward(frame1_var, frame2_var, model, args=args,
                              warm_up=False, patch_size=args.patch_size)
             img_size = frame1_var.size(2)
             if img_size > args.patch_size:
@@ -351,7 +353,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
             if (i % args.log_interval == 0):
                 save_vis(i, color2_est, color2_crop, frame1_var,
                          frame2_var, os.path.join(args.savepatch, 'train', str(epoch)),
-                         coords, corners_gt, new_c)
+                         coords, corners_gt, modeled_bbox)
 
         losses.update(loss.item(), frame1_var.size(0))
         optimizer.zero_grad()
@@ -403,17 +405,19 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 if __name__ == '__main__':
     args = parse_args()
     origin_save_dir = args.savepatch
-    expr_1_dir = os.path.join(origin_save_dir, 'scale_only')
+    args.orth = True
+    expr_1_dir = os.path.join(origin_save_dir, 'orth', 'scale_only')
     aug_1 = {'scale': 2}
-    expr_2_dir = os.path.join(origin_save_dir, 'rot_only')
+    expr_2_dir = os.path.join(origin_save_dir, 'orth', 'rot_only')
     aug_2 = {'rotate': 100}
-    expr_3_dir = os.path.join(origin_save_dir, 'aug_light')
+    expr_3_dir = os.path.join(origin_save_dir, 'orth', 'aug_light')
     aug_3 = {'scale': 1.5, 'rotate': 60}
-    expr_4_dir = os.path.join(origin_save_dir, 'aug_mid')
+    expr_4_dir = os.path.join(origin_save_dir, 'orth', 'aug_mid')
     aug_4 = {'scale': 2, 'rotate': 100, 'erase': (0.5, 0.01, 0.02, 0.6)}
 
     args.savepatch = expr_1_dir
     args.wepoch = 20
+    args.nepoch = 32
     logger.info('expr_1 warm')
     train(args, aug_1)
     args.wepoch = 10
@@ -424,6 +428,7 @@ if __name__ == '__main__':
 
     args.savepatch = expr_2_dir
     args.wepoch = 20
+    args.nepoch = 32
     logger.info('expr_2 warm')
     train(args, aug_2)
     args.wepoch = 10
@@ -434,6 +439,7 @@ if __name__ == '__main__':
 
     args.savepatch = expr_3_dir
     args.wepoch = 20
+    args.nepoch = 32
     logger.info('expr_3 warm')
     train(args, aug_3)
     args.wepoch = 10
@@ -444,6 +450,61 @@ if __name__ == '__main__':
 
     args.savepatch = expr_4_dir
     args.wepoch = 20
+    args.nepoch = 32
+    logger.info('expr_4 warm')
+    train(args, aug_4)
+    args.wepoch = 10
+    args.nepoch = 24
+    args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    logger.info('expr_4 nowarm')
+    train(args, aug_4)
+
+    args.orth = False
+    expr_1_dir = os.path.join(origin_save_dir, 'norm', 'scale_only')
+    aug_1 = {'scale': 2}
+    expr_2_dir = os.path.join(origin_save_dir, 'norm', 'rot_only')
+    aug_2 = {'rotate': 100}
+    expr_3_dir = os.path.join(origin_save_dir, 'norm', 'aug_light')
+    aug_3 = {'scale': 1.5, 'rotate': 60}
+    expr_4_dir = os.path.join(origin_save_dir, 'norm', 'aug_mid')
+    aug_4 = {'scale': 2, 'rotate': 100, 'erase': (0.5, 0.01, 0.02, 0.6)}
+
+    args.savepatch = expr_1_dir
+    args.wepoch = 20
+    args.nepoch = 32
+    logger.info('expr_1 warm')
+    train(args, aug_1)
+    args.wepoch = 10
+    args.nepoch = 24
+    args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    logger.info('expr_1 nowarm')
+    train(args, aug_1)
+
+    args.savepatch = expr_2_dir
+    args.wepoch = 20
+    args.nepoch = 32
+    logger.info('expr_2 warm')
+    train(args, aug_2)
+    args.wepoch = 10
+    args.nepoch = 24
+    args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    logger.info('expr_2 nowarm')
+    train(args, aug_2)
+
+    args.savepatch = expr_3_dir
+    args.wepoch = 20
+    args.nepoch = 32
+    logger.info('expr_3 warm')
+    train(args, aug_3)
+    args.wepoch = 10
+    args.nepoch = 24
+    args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    logger.info('expr_3 nowarm')
+    train(args, aug_3)
+
+    args.savepatch = expr_4_dir
+    args.wepoch = 20
+    args.nepoch = 32
     logger.info('expr_4 warm')
     train(args, aug_4)
     args.wepoch = 10

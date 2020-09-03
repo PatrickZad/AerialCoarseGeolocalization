@@ -28,8 +28,8 @@ def draw_bbox(img, bbox):
 
 
 def fcoord2imgcoord_center(fcoord, samp=8):
-    y = fcoord[0] * samp + samp // 2
-    x = fcoord[1] * samp + samp // 2
+    x = fcoord[0] * samp  # + samp // 2
+    y = fcoord[1] * samp  # + samp // 2
     return x, y
 
 
@@ -50,8 +50,8 @@ def cv_match(qidx, tidx, dist=0., img_idx=0):
 
 
 def draw_matches(img1, img2, f1_coords, f2_coords, upsamp_factor=8):
-    cv2.imwrite('./img1.jpg', img1)
-    cv2.imwrite('./img2.jpg', img2)
+    # cv2.imwrite('./img1.jpg', img1)
+    # cv2.imwrite('./img2.jpg', img2)
     img1_coords = [cv_point(fcoord2imgcoord_center(f1_coords[idx], upsamp_factor)) for idx in range(f1_coords.shape[0])]
     img2_coords = [cv_point(fcoord2imgcoord_center(f2_coords[idx], upsamp_factor)) for idx in range(f2_coords.shape[0])]
     cv_matches = [cv_match(i, i) for i in range(len(f1_coords))]
@@ -92,9 +92,9 @@ def save_vis(id, pred2, gt2, frame1, frame2, savedir, coords=None, gt_corners=No
         im_frame2 = cv2.cvtColor(np.array(im, dtype=np.uint8), cv2.COLOR_LAB2BGR)
 
         if new_c is not None:
-            '''new_bbox = new_c[cnt]
+            new_bbox = new_c[cnt]
             im_frame2 = draw_bbox(im_frame2, new_bbox)
-            cat_img = np.zeros((im_frame2.shape[0], im_frame1.shape[1] + im_frame2.shape[1], im_frame2.shape[2]))
+            '''cat_img = np.zeros((im_frame2.shape[0], im_frame1.shape[1] + im_frame2.shape[1], im_frame2.shape[2]))
             cat_img = cat_img.astype(np.uint8)
             cat_img[:im_frame1.shape[0], :im_frame1.shape[1], :] = im_frame1
             cat_img[:im_frame2.shape[0], im_frame1.shape[1]:, :] = im_frame2'''

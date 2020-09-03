@@ -132,7 +132,7 @@ class track_match_comb(nn.Module):
         self.coord_switch = coord_switch
         self.model_scale = model_scale
 
-    def forward(self, img_ref, img_tar, warm_up=True, patch_size=None, test_result=False):
+    def forward(self, img_ref, img_tar, warm_up=True, patch_size=None, test_result=False, strict_orth=True):
         n, c, h_ref, w_ref = img_ref.size()
         n, c, h_tar, w_tar = img_tar.size()
         gray_ref = copy.deepcopy(img_ref[:, 0].view(n, 1, h_ref, w_ref).repeat(1, 3, 1, 1))
@@ -248,13 +248,20 @@ class track_match_comb(nn.Module):
             # color orthorganal
             if self.color_switch:
                 # correct aff-softmax
-                Fcolor1_est = transform(aff_norm.transpose(1, 2), Fcolor2_crop)
+                if strict_orth:
+                    aff_mat = aff_norm.transpose(1, 2)
+                else:
+                    aff_mat = self.softmax(aff_p.permute(0, 2, 1))
+                Fcolor1_est = transform(aff_mat, Fcolor2_crop)
                 color1_est = self.decoder(Fcolor1_est)
                 output.append(color1_est)
 
             # coord orthorganal
             if self.coord_switch:
-                aff_norm_tran = aff_norm.transpose(1, 2)  # self.softmax(aff_p.permute(0, 2, 1) * self.temp)
+                if strict_orth:
+                    aff_norm_tran = aff_norm.transpose(1, 2)
+                else:
+                    aff_norm_tran = self.softmax(aff_p.permute(0, 2, 1) * self.temp)
                 if self.grid_flat_crop is None:
                     self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0, 2, 1).detach()
                 C12 = torch.bmm(self.grid_flat_crop, aff_norm)
