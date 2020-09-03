@@ -16,7 +16,7 @@ def default_corners(img):
         0, img.shape[0] - 1], [img.shape[1] - 1, img.shape[0] - 1]])
 
 
-def adaptive_rot(img_array, random=True, rot=None):
+def adaptive_rot(img_array, trans_pts=None, random=True, rot=None):
     corners = default_corners(img_array)
     if random:
         rot = np.random.random() * 360
@@ -29,7 +29,8 @@ def adaptive_rot(img_array, random=True, rot=None):
     corners = rot_corners + translation
     mat[0, -1], mat[1, -1] = -x, -y
     rot_img = cv2.warpPerspective(img_array, mat, (w, h))
-    return rot_img, corners
+    pts = warp_pts(trans_pts, mat)
+    return rot_img, corners,pts
 
 
 def center_square(img, content_corners):
@@ -76,8 +77,8 @@ def rand_erase(img, probability=0.5, sl=0.02, sh=0.1, r1=0.3, mean=(0.4914, 0.48
         if w < iw and h < ih:
             x1 = random.randint(0, ih - h)
             y1 = random.randint(0, iw - w)
-            img[x1:x1 + h, y1:y1 + w, 0] = mean[0]*128
-            img[x1:x1 + h, y1:y1 + w, 1] = mean[1]*128
-            img[x1:x1 + h, y1:y1 + w, 2] = mean[2]*128
+            img[x1:x1 + h, y1:y1 + w, 0] = mean[0] * 128
+            img[x1:x1 + h, y1:y1 + w, 1] = mean[1] * 128
+            img[x1:x1 + h, y1:y1 + w, 2] = mean[2] * 128
         return img
     return img

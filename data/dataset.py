@@ -276,7 +276,9 @@ class VHRRemoteDataReader:
         offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
         offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
         crop = map_arr[offset_y:offset_y + crop_size, offset_x:offset_x + crop_size, :].copy()
-        return crop
+        corners = np.array([(offset_x, offset_y), (offset_x + crop_size - 1, offset_y),
+                            (offset_x + crop_size - 1, offset_y + crop_size - 1), (offset_x, offset_y + crop_size - 1)])
+        return crop, corners
 
     def _read_rgb(self, idx):
         origin_img = cv.imread(os.path.join(
@@ -288,9 +290,10 @@ class VHRRemoteDataReader:
         oh, ow = origin_img.shape[:2]
         img_size_r = (long_size, long_size / ow * oh) if ow > oh else (long_size / oh * ow, long_size)
         resized_arr = cv.resize(origin_img, (int(img_size_r[0]), int(img_size_r[1])))
-        return resized_arr
+        factor = int(img_size_r[0]) / ow
+        return resized_arr, factor
 
-    def _square_padding(self, img):
+    def _square_padding(self, img, tran_pts):
         square_size = max(img.shape[0], img.shape[1])
         background = np.zeros((square_size, square_size, 3))
         background = background.astype(np.uint8)
@@ -299,9 +302,11 @@ class VHRRemoteDataReader:
         offset = diff // 2
         if img.shape[0] < img.shape[1]:
             background[offset:offset + img.shape[0], :img.shape[1], :] = img
+            offset_coord = np.array([(0, offset)])
         else:
             background[:img.shape[0], offset:offset + img.shape[1], :] = img
-        return background
+            offset_coord = np.array([(offset, 0)])
+        return background, tran_pts + offset_coord
 
     def read_item(self, idx, map_size=1024, crop_size=256, aug_options=None):
         if aug_options is not None:
@@ -332,7 +337,7 @@ class VHRRemoteDataReader:
 
     def _rand_aug_crop_pair(self, idx, map_size=1024, crop_size=256, pertube=32):
         origin_img = self._read_rgb(idx)
-        map_arr = self._resize_keep_ratio(origin_img, map_size)
+        map_arr, _ = self._resize_keep_ratio(origin_img, map_size)
         h, w = map_arr.shape[:2]
         offset_x = np.random.randint(int(0.1 * w), int(w - crop_size - 0.1 * w))
         offset_y = np.random.randint(int(0.1 * h), int(h - crop_size - 0.1 * h))
@@ -363,26 +368,39 @@ class VHRRemoteDataReader:
         crop2 = sk_warpcrop(map_arr, h_ba, (offset_box[0], offset_box[1], crop_size, crop_size))
         return crop1, crop2
 
+    def _test_corners_gt(self, img, corners, crop):
+        draw_img = img.copy()
+        cv2.polylines(draw_img, np.expand_dims(corners.astype(np.int32), axis=0), 1, (0, 0, 255), 3)
+        result = np.zeros((img.shape[0], img.shape[1] + crop.shape[1], 3))
+        result = result.astype(np.uint8)
+        result[:crop.shape[0], :crop.shape[1], :] = crop
+        result[:draw_img.shape[0], crop.shape[1]:, :] = draw_img
+        return result
+
     def _aug_pair(self, idx, aug_options, map_size=1024, crop_size=256):
         # TODO random tilt
         origin_img = self._read_rgb(idx)
-        map_arr = self._resize_keep_ratio(origin_img, map_size)
+        map_arr, _ = self._resize_keep_ratio(origin_img, map_size)
         if 'scale' in aug_options.keys():
             scale_factor = rand(1, aug_options['scale'])
             scaled_img = cv.resize(map_arr, dsize=(0, 0), fx=scale_factor, fy=scale_factor)
-            crop = self._rand_crop(scaled_img, crop_size)
+            crop, crop_corners = self._rand_crop(scaled_img, crop_size)
+            crop_corners = crop_corners / scale_factor
+
         else:
-            crop = self._rand_crop(map_arr, crop_size)
+            crop, crop_corners = self._rand_crop(map_arr, crop_size)
         if 'rotate' in aug_options.keys():
             rot = rand(-1, 1) * aug_options['rotate']
             if rot < 0:
                 rot += 360
-            map_arr, _ = data_aug.adaptive_rot(map_arr, random=False, rot=rot)
-            map_arr = self._resize_keep_ratio(map_arr, map_size)
+            map_arr, corners, crop_corners = data_aug.adaptive_rot(map_arr, trans_pts=crop_corners, random=False,
+                                                                   rot=rot)
+            map_arr, factor = self._resize_keep_ratio(map_arr, map_size)
+            crop_corners = crop_corners * factor
         if 'erase' in aug_options.keys():
             crop = data_aug.rand_erase(crop, *aug_options['erase'])
-        map_arr = self._square_padding(map_arr)
-        return crop, map_arr
+        map_arr, crop_corners = self._square_padding(map_arr, crop_corners)
+        return crop, map_arr, crop_corners
 
     def __next__(self, idx, aug_options):
         origin_img = cv.imread(os.path.join(
@@ -476,7 +494,8 @@ class VHRRemoteDataset(Dataset):
         if return_pair:
             ref, tar = self._data_reader.crop_pair(item, self._map_size, self._crop_size, self._pertube)
         else:
-            ref, tar = self._data_reader.read_item(item, self._map_size, self._crop_size, self._aug_options)
+            ref, tar, crop_corners_gt = self._data_reader.read_item(item, self._map_size, self._crop_size,
+                                                                    self._aug_options)
         ref = cv.cvtColor(ref, cv.COLOR_RGB2LAB)
         tar = cv.cvtColor(tar, cv.COLOR_RGB2LAB)
         tar_t = torch.from_numpy(tar.transpose(2, 0, 1).copy()).contiguous().float()
@@ -488,6 +507,8 @@ class VHRRemoteDataset(Dataset):
         return_data = [ref_t, tar_t]
         if return_rgb:
             return_data += [ref, tar]
+        if not return_pair:
+            return_data += [crop_corners_gt]
         return return_data
 
 
@@ -560,7 +581,7 @@ def getVHRRemoteDataAugCropper(crop_size=288, map_size=1024, proportion=(0.8, 0.
     train = VHRRemoteDataReader(dir, part2, aug)
     val = VHRRemoteDataReader(dir, part3, aug)
 
-    return VHRRemoteWarm(warm, crop_size, map_size, pertube), VHRRemoteDataset(train, crop_size, map_size, aug_light), \
+    return VHRRemoteWarm(warm, crop_size, map_size, pertube), VHRRemoteDataset(train, crop_size, map_size, aug), \
            VHRRemoteVal(val, crop_size, map_size)
 
 

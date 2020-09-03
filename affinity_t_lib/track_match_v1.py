@@ -18,13 +18,13 @@ import torch.backends.cudnn as cudnn
 from affinity_t_lib.model import track_match_comb as Model
 from affinity_t_lib.libs.loss import L1_loss
 from affinity_t_lib.libs.concentration_loss import ConcentrationSwitchLoss as ConcentrationLoss
-from affinity_t_lib.libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current
+from affinity_t_lib.libs.train_utils import save_vis, AverageMeter, save_checkpoint, log_current, avg_iou_of_batch
 from affinity_t_lib.libs.utils import diff_crop  # , diff_crop_by_assembled_grid
 
 from data.dataset import SenseflyTransTrain, SenseflyTransVal, getVHRRemoteDataRandomCropper, getVHRRemoteDataAugCropper
 
 FORMAT = "[%(asctime)-15s %(filename)s:%(lineno)d %(funcName)s] %(message)s"
-logging.basicConfig(format=FORMAT)
+logging.basicConfig(format=FORMAT, filename='./experiments/localization/affinity_trainable/expr_log.txt')
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -240,7 +240,7 @@ def forward(frame1, frame2, model, warm_up, patch_size=None):
     else:
         output = model(frame1, frame2, warm_up=False,
                        patch_size=[patch_size // 8, patch_size // 8])
-        bbox = output[2]
+        bbox = output[2][0]
         # gt patch
         # print("HERE2: ", frame2.size(), new_c, patch_size)
         color2_gt = diff_crop(frame2, bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3],
@@ -255,6 +255,9 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
     batch_time = AverageMeter()
     losses = AverageMeter()
     c_losses = AverageMeter()
+
+    iou_counter = AverageMeter()
+
     model.train()
     end = time.time()
     if args.coord_switch_flag:
@@ -300,6 +303,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
                 save_vis(i, color2_est, frame2_var, frame1_var,
                          frame2_var, os.path.join(args.savepatch, 'warm', str(epoch)))
         else:
+            corners_gt = frames[-1]
             output = forward(frame1_var, frame2_var, model,
                              warm_up=False, patch_size=args.patch_size)
             img_size = frame1_var.size(2)
@@ -310,7 +314,7 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
                              center - half_patch_size:center - half_patch_size + args.patch_size]
             color2_est = output[0]
             aff = output[1]
-            new_c = output[2]
+            new_c, modeled_bbox = output[2]
             coords = output[3]
             # f1_grid, fcrop_grid = output[3]
             # Fcolor2_crop = output[-1]
@@ -322,6 +326,9 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 
             constraint_loss = torch.sum(closs(aff.view(b, 1, x, x))) * args.lc
             c_losses.update(constraint_loss.item(), frame1_var.size(0))
+
+            avg_iou = avg_iou_of_batch(modeled_bbox, corners_gt)
+            iou_counter.update(avg_iou, modeled_bbox.size(0))
 
             if args.color_switch_flag:
                 count += 1
@@ -343,7 +350,8 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 
             if (i % args.log_interval == 0):
                 save_vis(i, color2_est, color2_crop, frame1_var,
-                         frame2_var, os.path.join(args.savepatch, 'train', str(epoch)), new_c)
+                         frame2_var, os.path.join(args.savepatch, 'train', str(epoch)),
+                         coords, corners_gt, new_c)
 
         losses.update(loss.item(), frame1_var.size(0))
         optimizer.zero_grad()
@@ -354,19 +362,25 @@ def train_iter(args, loader, model, closs, optimizer, epoch, best_loss):
 
         if epoch >= args.wepoch and args.coord_switch_flag:
             if i % args.log_interval == 0:
-                logger.info('Epoch: [{0}][{1}/{2}]\t'
-                            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                            'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
-                            'Coord switch Loss {scloss.val:.4f} ({scloss.avg:.4f})\t '
-                            'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
-                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, scloss=sc_losses, c_loss=c_losses))
+                info_str = 'Epoch: [{0}][{1}/{2}]\t' \
+                           'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' \
+                           'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t ' \
+                           'Coord switch Loss {scloss.val:.4f} ({scloss.avg:.4f})\t ' \
+                           'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t ' \
+                           'IOU Average {iou_meter.val:.4f}({iou_meter.avg:.4f})\t '.format(
+                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, scloss=sc_losses, c_loss=c_losses,
+                    iou_meter=iou_counter)
+                logger.info(info_str)
+                print(info_str)
         else:
             if i % args.log_interval == 0:
-                logger.info('Epoch: [{0}][{1}/{2}]\t'
-                            'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                            'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t '
-                            'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
-                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, c_loss=c_losses))
+                info_str = 'Epoch: [{0}][{1}/{2}]\t' \
+                           'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' \
+                           'Color Loss {loss.val:.4f} ({loss.avg:.4f})\t ' \
+                           'Constraint Loss {c_loss.val:.4f} ({c_loss.avg:.4f})\t '.format(
+                    epoch, i + 1, len(loader), batch_time=batch_time, loss=losses, c_loss=c_losses)
+                logger.info(info_str)
+                print(info_str)
 
         if ((i + 1) % args.save_interval == 0):
             is_best = losses.avg < best_loss
@@ -399,23 +413,43 @@ if __name__ == '__main__':
     aug_4 = {'scale': 2, 'rotate': 100, 'erase': (0.5, 0.01, 0.02, 0.6)}
 
     args.savepatch = expr_1_dir
+    args.wepoch = 20
+    logger.info('expr_1 warm')
     train(args, aug_1)
+    args.wepoch = 10
+    args.nepoch = 24
     args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    logger.info('expr_1 nowarm')
     train(args, aug_1)
 
     args.savepatch = expr_2_dir
+    args.wepoch = 20
+    logger.info('expr_2 warm')
     train(args, aug_2)
+    args.wepoch = 10
+    args.nepoch = 24
     args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    logger.info('expr_2 nowarm')
     train(args, aug_2)
 
     args.savepatch = expr_3_dir
+    args.wepoch = 20
+    logger.info('expr_3 warm')
     train(args, aug_3)
+    args.wepoch = 10
+    args.nepoch = 24
     args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    logger.info('expr_3 nowarm')
     train(args, aug_3)
 
     args.savepatch = expr_4_dir
+    args.wepoch = 20
+    logger.info('expr_4 warm')
     train(args, aug_4)
+    args.wepoch = 10
+    args.nepoch = 24
     args.savepatch = os.path.join(args.savepatch, 'no_warm')
+    logger.info('expr_4 nowarm')
     train(args, aug_4)
 
     # writer.close()

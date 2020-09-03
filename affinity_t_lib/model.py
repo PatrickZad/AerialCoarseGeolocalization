@@ -204,14 +204,15 @@ class track_match_comb(nn.Module):
             aff_ref_tar_o = self.nlm(Fgray1, Fgray2)
             aff_ref_tar = torch.nn.functional.softmax(aff_ref_tar_o * self.temp, dim=2)
             coords = torch.bmm(aff_ref_tar, self.grid_flat)
-
+            center = torch.mean(coords, dim=1)  # b * 2
+            fixedbbox = center2bbox(center, patch_size, h_tar, w_tar)
+            modeled_bbox = coords2bbox(coords, patch_size, h_tar, w_tar)
             if not self.model_scale:
-                center = torch.mean(coords, dim=1)  # b * 2
-                bbox = center2bbox(center, patch_size, h_tar, w_tar)
+                bbox = fixedbbox
             # new_c = center2bbox(center, patch_size, Fgray2.size(2), Fgray2.size(3))
             # print("center2bbox:", new_c, h_tar, w_tar)
             else:
-                bbox = coords2bbox(coords, patch_size, h_tar, w_tar)
+                bbox = modeled_bbox
                 '''limit_h, limit_w = Fgray2.size(2), Fgray2.size(3)
                 expand = (coords - center.view(- 1, 1, 2)).abs().mean(dim=1)  # b*2
                 left_top = center - expand  # b*2
@@ -241,19 +242,19 @@ class track_match_comb(nn.Module):
 
             output.append(color2_est)
             output.append(aff_p)
-            output.append(bbox * 8)
+            output.append((bbox * 8, modeled_bbox * 8))
             output.append(coords)
 
             # color orthorganal
             if self.color_switch:
                 # correct aff-softmax
-                Fcolor1_est = transform(self.softmax(aff_p.transpose(1, 2)), Fcolor2_crop)
+                Fcolor1_est = transform(aff_norm.transpose(1, 2), Fcolor2_crop)
                 color1_est = self.decoder(Fcolor1_est)
                 output.append(color1_est)
 
             # coord orthorganal
             if self.coord_switch:
-                aff_norm_tran = self.softmax(aff_p.permute(0, 2, 1) * self.temp)
+                aff_norm_tran = aff_norm.transpose(1, 2)  # self.softmax(aff_p.permute(0, 2, 1) * self.temp)
                 if self.grid_flat_crop is None:
                     self.grid_flat_crop = create_flat_grid(Fgray2_crop.size()).permute(0, 2, 1).detach()
                 C12 = torch.bmm(self.grid_flat_crop, aff_norm)
